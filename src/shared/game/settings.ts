@@ -1,5 +1,5 @@
 import type { CouncilStatus, GuildSettings, StatusTone } from '../../guildApi'
-import { isPhaseRev, readPhaseHistory } from './phases'
+import { isPhaseRev, readPhaseHistory } from './phases.ts'
 
 export const SETTINGS_LABEL_MAX = 40
 
