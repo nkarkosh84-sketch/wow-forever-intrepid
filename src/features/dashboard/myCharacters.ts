@@ -1,6 +1,6 @@
 import type { AfkEntryRecord, AwardRecord, PlayerRecord, PriorityRecord, RaidRecord } from '../../guildApi'
 import { makeWho, readLines } from '../../shared/game/candidates.ts'
-import { listingProgress, type PriorityLookup } from '../../shared/game/completion.ts'
+import { isRemovedAward, listingProgress, type PriorityLookup } from '../../shared/game/completion.ts'
 import { phaseNoOf } from '../../shared/game/phases.ts'
 import { unavailableOn } from '../../shared/raids/availability.ts'
 
@@ -38,8 +38,9 @@ export function myPriorities(priorities: PriorityRecord[], characters: PlayerRec
   return result.sort((a, b) => b.phaseNo - a.phaseNo || a.position - b.position || a.priority.item.localeCompare(b.priority.item))
 }
 
+// The loot this account's characters received. A removed award is not loot anyone received (it stays in the Log).
 export function myAwards(awards: AwardRecord[], characters: PlayerRecord[]) {
-  return awards.filter((award) => characters.some((character) => (award.recipientId !== undefined ? award.recipientId === character.id : sameName(award.recipient, character))))
+  return awards.filter((award) => !isRemovedAward(award) && characters.some((character) => (award.recipientId !== undefined ? award.recipientId === character.id : sameName(award.recipient, character))))
 }
 
 export type UpcomingRaid = { raid: RaidRecord; unavailable: boolean }

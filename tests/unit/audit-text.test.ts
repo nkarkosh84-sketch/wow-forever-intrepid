@@ -80,10 +80,28 @@ describe('describeEntry', () => {
     assert.deepEqual(details, ['Award date: 2026-12-09', 'Award note: (empty)', 'Phase: Launch'])
   })
   it('says an award was corrected or removed, with the reason', () => {
-    assert.deepEqual(text({ targetType: 'award', changed: ['recipient'], before: { recipient: 'Aria' }, after: { recipient: 'Brock' } }), { title: 'Corrected the award of \u201cTest Sword\u201d', details: ['Recipient: Aria \u2192 Brock'] })
+    assert.deepEqual(text({ targetType: 'award', changed: ['awardNote'], before: { awardNote: '' }, after: { awardNote: 'Rolled' } }), { title: 'Corrected the award of \u201cTest Sword\u201d', details: ['Award note: (empty) \u2192 Rolled'] })
+    assert.deepEqual(text({ targetType: 'award', changed: ['recipient'], before: { recipient: 'Aria' }, after: { recipient: 'Brock' } }), { title: 'Moved the award of \u201cTest Sword\u201d from Aria to Brock', details: [] })
     const removed = text({ targetType: 'award', action: 'remove', changed: ['status', 'removedReason'], before: { status: null }, after: { status: 'removed' }, reason: 'Entered twice' })
     assert.equal(removed.title, 'Removed the award of \u201cTest Sword\u201d')
     assert.deepEqual(removed.details, ['Reason: Entered twice'])
+  })
+  it('says a receipt was moved, from whom to whom, with the reason', () => {
+    const moved = text({ targetType: 'award', changed: ['recipient', 'recipientId'], before: { recipient: 'Aria', recipientId: 'p-1' }, after: { recipient: 'Brock', recipientId: 'p-2' }, reason: 'Recorded to the wrong character' })
+    assert.equal(moved.title, 'Moved the award of “Test Sword” from Aria to Brock')
+    assert.deepEqual(moved.details, ['Reason: Recorded to the wrong character'])
+    // A change of the date alongside it is still listed; a change that is not of the recipient is a plain correction.
+    assert.deepEqual(text({ targetType: 'award', changed: ['recipient', 'awardedAt'], before: { recipient: 'Aria', awardedAt: '2026-12-09' }, after: { recipient: 'Brock', awardedAt: '2026-12-10' } }).details, ['Award date: 2026-12-09 → 2026-12-10'])
+    assert.equal(text({ targetType: 'award', changed: ['awardNote'], before: { awardNote: '' }, after: { awardNote: 'x' } }).title, 'Corrected the award of “Test Sword”')
+  })
+  it('names who a removed or restored award was for, when the Log can say', () => {
+    const lookups = { awardRecipient: (id: string) => (id === 'a1' ? 'Aria' : undefined) }
+    const removed = describeEntry(entry({ targetType: 'award', targetId: 'a1', action: 'remove', changed: ['status', 'removedReason'], before: { status: null }, after: { status: 'removed' }, reason: 'Entered twice' }), phaseName, lookups)
+    assert.equal(removed.title, 'Removed the award of “Test Sword” to Aria')
+    const restored = describeEntry(entry({ targetType: 'award', targetId: 'a1', changed: ['status', 'removedReason'], before: { status: 'removed', removedReason: 'Entered twice' }, after: { status: 'active', removedReason: null } }), phaseName, lookups)
+    assert.equal(restored.title, 'Restored the award of “Test Sword” to Aria')
+    assert.deepEqual(restored.details, ['It was removed because: Entered twice'])
+    assert.equal(describeEntry(entry({ targetType: 'award', targetId: 'zz', action: 'remove', changed: ['status'], reason: 'x' }), phaseName, lookups).title, 'Removed the award of “Test Sword”')
   })
   it('does not break on an entry it does not know, or an item with no name', () => {
     assert.equal(text({ targetType: 'raid', action: 'cancel', item: '' }).title, 'cancel raid \u201cUntitled\u201d')

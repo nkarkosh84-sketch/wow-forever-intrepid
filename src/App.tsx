@@ -4,6 +4,7 @@ import { canManageRaidData, canManageRoster, type GuildRole } from './security'
 import { useGuildData } from './useGuildData'
 import { useGuildSession } from './useGuildSession'
 import { AccessScreen } from './AccessScreen'
+import { isRemovedAward } from './shared/game/completion'
 import type { RaidView } from './shared/game/teams'
 import type { ModalRenderer, TabContext } from './shared/tabs/types'
 import { ErrorBoundary } from './shared/ui/ErrorBoundary'
@@ -110,7 +111,7 @@ function App() {
         <div className="page-wrap">
           <PageHeading tab={tab} ctx={ctx} />
 
-          <StatStrip roster={roster.length} priorities={priorities.length} awards={awards.length} councilStatus={data.settings.councilStatus} />
+          <StatStrip roster={roster.length} priorities={priorities.length} awards={awards.filter((award) => !isRemovedAward(award)).length} councilStatus={data.settings.councilStatus} />
 
           <ErrorBoundary kind="panel" resetKey={tab.id}><WorkspacePanel tab={tab} ctx={ctx} setQuery={setQuery} error={mutationError || dataError} notice={notice} unreadable={effectiveRole === 'Guild Leader' ? data.unreadable : 0} /></ErrorBoundary>
           <p className="preview-note"><Shield size={14} /> Guild data is shared with authorized guild accounts and protected by Firestore rules.</p>

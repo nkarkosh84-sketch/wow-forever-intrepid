@@ -27,7 +27,7 @@ import { nextPhaseRev } from './shared/game/phases'
 import type { TableWrite } from './shared/game/guildTables'
 import { isHexColor, isZoneKey } from './shared/game/zoneColors'
 import { EMPTY_ZONE_ART, ZONE_IMAGE_LIMIT, fullPath, isImageName, newImageId, readZoneArt, thumbPath, zonesUsing, type ZoneArt, type ZoneImage } from './shared/game/zoneArt'
-import { awardCreateFields, describeCreate, describeDelete, describeEdit, phaseAuditFields, priorityAuditFields, readAuditEntry, tableAuditFields, type AuditEntry } from './shared/game/lootAudit'
+import { awardCreateFields, awardEditFields, describeCreate, describeDelete, describeEdit, phaseAuditFields, priorityAuditFields, readAuditEntry, tableAuditFields, type AuditEntry } from './shared/game/lootAudit'
 import { normalizeDocs, type Normalizer } from './shared/lib/normalize'
 import { raidStartDate } from './shared/lib/raidStart'
 import { sameRaidZones } from './shared/raids/zoneSnapshots'
@@ -62,7 +62,17 @@ export type AwardRecord = {
   phaseNo?: number
   // Awards made since the Log began have a revision (1 or more); one without is older and has no entry in the Log.
   rev?: number
+  // Who recorded it, and when (server time); none on an award from before the Log began (they stay none after a fix, so such an award can still be told).
+  createdBy?: string
+  createdAt?: unknown
+  // How a manual award (no priority) was decided.
+  decision?: AwardDecision
+  // A removed award is kept, marked, with the reason (never deleted): it stops counting everywhere and stays in the Log. None means active.
+  status?: AwardStatus
+  removedReason?: string
 }
+export type AwardStatus = 'active' | 'removed'
+export type AwardDecision = 'roll' | 'council' | 'other'
 export type AfkEntryRecord = { id: string; userId: string; displayName: string; startDate: string; endDate: string; createdAt?: unknown }
 export type CommentKind = 'public' | 'leadership'
 export const COMMENT_MAX_LENGTH = 300
@@ -709,6 +719,36 @@ export async function recordAwardThroughNote(award: NewAward, priority: Priority
   batch.set(doc(database, 'guilds', guildId, 'auditLog', `priority_${priority.id}_${rev}`), auditEntry(who, 'priority', priority.id, rev, 'edit', priority.item, description))
   await batch.commit()
   return ref.id
+}
+
+// What a leader can change on an award (LOOT-004). A field set to undefined is taken away. The candidate order and council note at decision time
+// (`prioritySnapshot`, `councilNoteSnapshot`) never change, and an award is never deleted: removing one is an edit that marks it removed, with a reason.
+export type AwardChanges = Partial<Pick<AwardRecord, 'recipient' | 'recipientId' | 'awardedAt' | 'awardNote' | 'decision' | 'phaseNo' | 'status' | 'removedReason'>>
+
+// One batch: the award's next revision and its entry (`award_{id}_{rev}`). An award from before the Log began has no revision, so its first edit is
+// revision 1, and its entry is the first the Log holds for it. The rules check that the entry tells the truth, and accept neither without the other.
+async function writeAwardChange(award: AwardRecord, changes: AwardChanges, action: 'edit' | 'remove', who: AuditWho, reason?: string) {
+  const database = requireDb()
+  const description = describeEdit(award as unknown as Record<string, unknown>, changes, awardEditFields)
+  if (!description) throw new Error('Nothing was changed.')
+  const rev = (award.rev ?? 0) + 1
+  const update = Object.fromEntries(description.changed.map((key) => [key, changes[key as keyof AwardChanges] === undefined ? deleteField() : changes[key as keyof AwardChanges]]))
+  const batch = writeBatch(database)
+  batch.update(doc(database, 'guilds', guildId, 'awards', award.id), { ...update, rev, updatedBy: who.uid, updatedAt: serverTimestamp() })
+  batch.set(doc(database, 'guilds', guildId, 'auditLog', `award_${award.id}_${rev}`), { ...auditEntry(who, 'award', award.id, rev, action, award.item, description), ...(reason ? { reason } : {}) })
+  await batch.commit()
+}
+
+/** Moves a receipt to someone else, or corrects another field of an award. One entry says what it was and what it is now. The reason is optional. */
+export async function correctAward(award: AwardRecord, changes: AwardChanges, who: AuditWho, reason?: string) {
+  await writeAwardChange(award, changes, 'edit', who, reason?.trim() || undefined)
+}
+
+/** Removes an award that was a mistake: it is kept, marked removed, and stops counting. A reason is required. */
+export async function removeAward(award: AwardRecord, reason: string, who: AuditWho) {
+  const why = reason.trim()
+  if (!why) throw new Error('Give a reason for removing the award.')
+  await writeAwardChange(award, { status: 'removed', removedReason: why }, 'remove', who, why)
 }
 
 /** The newest `max` entries of the audit log, live. Every guild member can read it; nobody can change or delete an entry. */

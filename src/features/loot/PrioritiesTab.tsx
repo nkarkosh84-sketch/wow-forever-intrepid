@@ -10,6 +10,7 @@ import { useBossOrder } from './useDropTables'
 import { useZoneColors } from './useZoneColors'
 import { PriorityList } from './PriorityList'
 import { PriorityModal } from './PriorityModal'
+import { ReceiptFixModal } from './ReceiptFixModal'
 import { usePriorityFilters } from './priorityFilters'
 import { usePhaseView } from './usePhaseView'
 import { useSlotOf } from './useSlotOf'
@@ -48,5 +49,5 @@ export function PrioritiesTab({ ctx }: { ctx: TabContext }) {
   const notice = view.kind === 'past' ? `${view.name} is closed. This is a record of its lists: nothing here can be changed.`
     : view.kind === 'next' ? `${view.name} has not started. Only leaders see it. Prepare its lists here; nothing can be awarded until it starts.` : undefined
 
-  return <PriorityList priorities={visiblePriorities(priorities, awards, ctx.query, filters, slotOf, lookup, who)} lookup={lookup} grouped={filters.grouped} bossOrder={bossOrder} zoneColors={zoneColors} awards={awards} who={who} canEdit={canEdit} canAward={canAward} notice={notice} busy={busy} phaseName={(no) => phaseName(ctx.data.settings, no)} onEdit={(priority) => ctx.openModal(({ close, live }) => <PriorityModal existing={priority} close={close} live={live} />)} onAward={openAward} onMoveCandidate={moveCandidate} />
+  return <PriorityList priorities={visiblePriorities(priorities, awards, ctx.query, filters, slotOf, lookup, who)} lookup={lookup} grouped={filters.grouped} bossOrder={bossOrder} zoneColors={zoneColors} awards={awards} who={who} canEdit={canEdit} canAward={canAward} notice={notice} busy={busy} phaseName={(no) => phaseName(ctx.data.settings, no)} onEdit={(priority) => ctx.openModal(({ close, live }) => <PriorityModal existing={priority} close={close} live={live} />)} onAward={openAward} onMoveCandidate={moveCandidate} onFixReceipt={(priority, award) => ctx.openModal(({ close, live }) => <ReceiptFixModal priority={priority} award={award} close={close} live={live} />)} />
 }

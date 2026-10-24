@@ -117,6 +117,10 @@ describe('the member dashboard', () => {
     const awards = [award('Morrow', { recipientId: 'p-1' }), award('Vex'), award('Aurelia', { recipientId: 'p-2' }), award('Morrow')] as never[]
     assert.equal(myAwards(awards, mine as never).length, 2)
   })
+  it('does not list a removed award as loot received', () => {
+    const awards = [award('Morrow', { recipientId: 'p-1' }), award('Morrow', { recipientId: 'p-1', status: 'removed' }), award('Vex', { status: 'active' })] as never[]
+    assert.equal(myAwards(awards, mine as never).length, 2)
+  })
 })
 
 describe('carrying over a priority with ids', () => {

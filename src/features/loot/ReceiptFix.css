@@ -1,0 +1,23 @@
+/* The x next to RECEIVED on an unlocked item, and the Fix receipt dialog (ReceiptFixModal). The form is the same .modal-form the Record loot award dialog uses. */
+.receipt-fix { display: inline-grid; width: 18px; height: 18px; flex: none; place-items: center; border: 1px solid transparent; border-radius: 3px; color: #8a6a60; background: transparent; cursor: pointer; }
+.receipt-fix:hover:not(:disabled) { color: #a8402f; border-color: #e3c4bd; background: #fbeeea; }
+.receipt-fix:disabled { opacity: .35; cursor: default; }
+:root[data-theme='dark'] .receipt-fix { color: #c9a79e; }
+:root[data-theme='dark'] .receipt-fix:hover:not(:disabled) { color: #f0a090; border-color: #6a3b34; background: #3a2422; }
+
+/* Scoped to the form: .modal-form styles every label and input in a dialog, and these have to win over it. */
+.receipt-fix-form .receipt-fix-modes { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.receipt-fix-form .receipt-fix-modes legend { margin: 0 0 6px; padding: 0; color: #526158; font-size: 10px; font-weight: 700; }
+.receipt-fix-form .receipt-fix-mode { display: flex; align-items: flex-start; gap: 10px; padding: 9px 10px; border: 1px solid #dfe6dc; border-radius: var(--card-radius); cursor: pointer; }
+.receipt-fix-form .receipt-fix-mode:has(input:checked) { border-color: #8eb7d7; background: #f0f7fc; }
+.receipt-fix-form .receipt-fix-mode input { flex: none; width: 15px; min-height: 0; height: 15px; margin: 1px 0 0; padding: 0; accent-color: #315f9f; }
+.receipt-fix-form .receipt-fix-mode > span { display: grid; gap: 2px; }
+.receipt-fix-form .receipt-fix-mode strong { color: #33443a; font-size: 11px; }
+.receipt-fix-form .receipt-fix-mode small { color: #62758a; font-size: 10px; font-weight: 400; }
+.receipt-fix-problem { margin: 0; color: #9a3b2c; font-size: 11px; font-weight: 600; }
+:root[data-theme='dark'] .receipt-fix-form .receipt-fix-modes legend { color: #bfccd9; }
+:root[data-theme='dark'] .receipt-fix-form .receipt-fix-mode { border-color: #3a4b61; }
+:root[data-theme='dark'] .receipt-fix-form .receipt-fix-mode:has(input:checked) { border-color: #5f95bd; background: #1f3045; }
+:root[data-theme='dark'] .receipt-fix-form .receipt-fix-mode strong { color: #e8edf3; }
+:root[data-theme='dark'] .receipt-fix-form .receipt-fix-mode small { color: #9fb0c3; }
+:root[data-theme='dark'] .receipt-fix-problem { color: #f0a090; }

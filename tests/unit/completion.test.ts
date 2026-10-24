@@ -54,6 +54,38 @@ describe('listingProgress', () => {
     assert.deepEqual(listingProgress(list, [award('Morrow', { priorityId: '', item: '  signet of the DEEP earth ' })]).received, [true])
   })
 
+  it('says which award each received line stands on, the oldest award on the first listing', () => {
+    const list = priority(['Morrow', 'Vex', 'Morrow'])
+    const awards = [
+      { ...award('Morrow'), id: 'late', awardedAt: '2026-12-16' },
+      { ...award('Vex'), id: 'vex', awardedAt: '2026-12-09' },
+      { ...award('Morrow'), id: 'early', awardedAt: '2026-12-09' },
+    ]
+    const progress = listingProgress(list, awards)
+    assert.deepEqual(progress.receipts.map((receipt) => receipt?.id), ['early', 'vex', 'late'])
+    assert.deepEqual(listingProgress(list, [...awards].reverse()).receipts.map((receipt) => receipt?.id), ['early', 'vex', 'late'])
+  })
+  it('keeps two receipts of one item on one night in the order they were entered, whatever their ids say', () => {
+    const list = priority(['Morrow', 'Morrow'])
+    const first = { ...award('Morrow'), id: 'zzz', awardedAt: '2026-12-09', createdAt: { toMillis: () => 1000 } }
+    const second = { ...award('Morrow'), id: 'aaa', awardedAt: '2026-12-09', createdAt: { toMillis: () => 2000 } }
+    assert.deepEqual(listingProgress(list, [second, first]).receipts.map((receipt) => receipt?.id), ['zzz', 'aaa'])
+    assert.deepEqual(listingProgress(list, [first, second]).receipts.map((receipt) => receipt?.id), ['zzz', 'aaa'])
+    // Without a time (an award from before the Log, or a time that has not arrived yet) it falls back to the id.
+    assert.deepEqual(listingProgress(list, [{ ...first, createdAt: undefined }, { ...second, createdAt: null }]).receipts.map((receipt) => receipt?.id), ['aaa', 'zzz'])
+  })
+  it('has no award for a line that is not received, and none for a note', () => {
+    // The first line is an open note (an empty id), the second is Vex (id p-3), the third is Morrow, who has received nothing.
+    const list = { ...priority(['Any warlock', 'Vex', 'Morrow']), rankedIds: ['', 'p-3', 'p-1'] }
+    const progress = listingProgress(list, [{ ...award('Vex'), recipientId: 'p-3', id: 'v' }])
+    assert.deepEqual(progress.receipts.map((receipt) => receipt?.id), [undefined, 'v', undefined])
+    assert.deepEqual(progress.receipts.map((receipt) => receipt !== undefined), progress.received)
+  })
+  it('stands on the award that is still active when another of the same person was removed', () => {
+    const list = priority(['Morrow', 'Morrow'])
+    const progress = listingProgress(list, [{ ...award('Morrow', { status: 'removed' }), id: 'gone', awardedAt: '2026-12-09' }, { ...award('Morrow'), id: 'kept', awardedAt: '2026-12-16' }])
+    assert.deepEqual(progress.receipts.map((receipt) => receipt?.id), ['kept', undefined])
+  })
   it('stops counting a removed award', () => {
     const list = priority(['Morrow', 'Morrow'])
     assert.deepEqual(listingProgress(list, [award('Morrow'), award('Morrow', { status: 'removed' })]).received, [true, false])

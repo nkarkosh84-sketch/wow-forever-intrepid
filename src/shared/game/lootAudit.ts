@@ -10,6 +10,9 @@ export const tableAuditFields = ['type', 'zoneId', 'key', 'phaseNo', 'follows', 
 // The settings fields a phase entry lists (when a phase is started or reopened): the ones that differ, each with its old and new value.
 export const phaseAuditFields = ['currentPhase', 'nextPhase', 'phaseHistory'] as const
 export const awardCreateFields = ['priorityId', 'item', 'encounter', 'recipient', 'recipientId', 'awardedAt', 'prioritySnapshot', 'prioritySnapshotIds', 'councilNoteSnapshot', 'awardNote', 'phaseNo'] as const
+// The fields a leader can correct, remove or restore on an award (LOOT-004). The snapshot fields (the candidate order and council note at decision time),
+// the priority and the item are never changed: an award of the wrong item is removed and recorded again.
+export const awardEditFields = ['recipient', 'recipientId', 'awardedAt', 'awardNote', 'decision', 'phaseNo', 'status', 'removedReason'] as const
 
 type Values = Record<string, unknown>
 
@@ -63,6 +66,32 @@ export type AuditEntry = {
 
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
 const map = (value: unknown): Values => (value && typeof value === 'object' && !Array.isArray(value) ? (value as Values) : {})
+
+/**
+ * An award as it was first recorded: what it says now, with the old value of every field that a later entry changed (the oldest entry's old value wins;
+ * a field that did not exist then is taken away). An award from before the Log began has no entry of its own, so the Log builds its first row from this
+ * and a correction cannot rewrite what that row says.
+ */
+export function awardAsRecorded<A extends { id: string }>(award: A, entries: { targetType: string; targetId: string; rev: number; changed: string[]; before: Values }[]): A {
+  const original: Values = {}
+  const later = entries.filter((entry) => entry.targetType === 'award' && entry.targetId === award.id).sort((a, b) => a.rev - b.rev)
+  for (const entry of later) for (const field of entry.changed) if (!(field in original)) original[field] = entry.before[field] ?? undefined
+  return { ...award, ...original }
+}
+
+/**
+ * Whether an award was made before the Log began (so no entry of its own describes it). Every award the app records has both a revision and a creator, and
+ * a correction gives an old award a revision but never a creator, so an award lacking either is an old one and must stay in the Log after it is corrected.
+ */
+export const isLegacyAward = (award: { rev?: number; createdBy?: string }) => award.rev === undefined || award.createdBy === undefined
+
+/**
+ * Whether the first row of an award from before the Log began cannot be trusted yet: it was fixed since (so it has a revision), the Log has older entries it has not
+ * loaded, and the first fix's entry is not among those it has. Without that entry the row can only show the award as it is now, not as it was first recorded.
+ */
+export function legacyRowUncertain(award: { id: string; rev?: number; createdBy?: string }, entries: readonly { targetType: string; targetId: string; rev: number }[], moreToLoad: boolean): boolean {
+  return isLegacyAward(award) && award.rev !== undefined && moreToLoad && !entries.some((entry) => entry.targetType === 'award' && entry.targetId === award.id && entry.rev === 1)
+}
 
 /** An award made before the Log began has no entry; the Log shows it as an entry of its own (revision 0), dated the raid night. */
 export function legacyAwardEntry(award: { id: string; priorityId?: string; item: string; encounter: string; recipient: string; awardedAt: string; prioritySnapshot?: string[]; councilNoteSnapshot?: string; awardNote?: string; phaseNo?: number }): AuditEntry {

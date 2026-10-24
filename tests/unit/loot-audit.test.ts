@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { awardCreateFields, describeCreate, describeDelete, describeEdit, legacyAwardEntry, priorityAuditFields, readAuditEntry, sameValue } from '../../src/shared/game/lootAudit.ts'
+import { awardAsRecorded, awardCreateFields, describeCreate, describeDelete, describeEdit, isLegacyAward, legacyAwardEntry, legacyRowUncertain, priorityAuditFields, readAuditEntry, sameValue } from '../../src/shared/game/lootAudit.ts'
 
 // Invented names.
 const priority = { item: 'Test Sword', encounter: 'Test Hall \u00b7 Warden', rankedPlayers: ['Aria', 'Brock'], councilNote: '', phaseNo: 0, itemId: 101 }
@@ -104,5 +104,60 @@ describe('legacyAwardEntry', () => {
     const entry = legacyAwardEntry({ id: 'a2', item: 'X', encounter: '', recipient: 'Aria', awardedAt: 'last Tuesday' })
     assert.equal(entry.at, null)
     assert.equal(entry.changed.includes('prioritySnapshot'), false)
+  })
+})
+
+describe('isLegacyAward', () => {
+  it('is an award with no revision or no creator, and stays one after a correction gives it a revision', () => {
+    assert.ok(isLegacyAward({}))
+    assert.ok(isLegacyAward({ rev: 1 }))
+    assert.ok(isLegacyAward({ createdBy: 'uid' }))
+  })
+  it('is not an award the app recorded (it has both)', () => {
+    assert.equal(isLegacyAward({ rev: 1, createdBy: 'uid' }), false)
+    assert.equal(isLegacyAward({ rev: 3, createdBy: 'uid' }), false)
+  })
+})
+
+describe('legacyRowUncertain', () => {
+  const old = { id: 'a1', rev: 1 }
+  const entry = (id: string, rev: number) => ({ targetType: 'award', targetId: id, rev })
+  it('is unsure when the award was fixed, older entries are not loaded and its first fix is not among those that are', () => {
+    assert.equal(legacyRowUncertain(old, [entry('other', 1), entry('a1', 2)], true), true)
+    assert.equal(legacyRowUncertain(old, [], true), true)
+  })
+  it('is sure when everything is loaded, when its first fix is loaded, or when the award was never fixed', () => {
+    assert.equal(legacyRowUncertain(old, [], false), false)
+    assert.equal(legacyRowUncertain(old, [entry('a1', 1)], true), false)
+    assert.equal(legacyRowUncertain({ id: 'a1' }, [], true), false)
+  })
+  it('is never unsure for an award the app recorded', () => {
+    assert.equal(legacyRowUncertain({ id: 'a1', rev: 1, createdBy: 'uid' }, [], true), false)
+  })
+})
+
+describe('awardAsRecorded', () => {
+  const now = { id: 'a1', item: 'Test Sword', recipient: 'Brock', recipientId: 'p-2', awardedAt: '2026-11-06', awardNote: 'Redecided' }
+  const edit = (id: string, rev: number, changed: string[], before: Record<string, unknown>) => ({ targetType: 'award', targetId: id, rev, changed, before })
+  it('gives back the award as it is when nothing was changed', () => {
+    assert.deepEqual(awardAsRecorded(now, []), now)
+    assert.deepEqual(awardAsRecorded(now, [edit('other', 1, ['recipient'], { recipient: 'Aria' })]), now)
+  })
+  it('puts back the old value of every field a later entry changed, and takes away a field that was not there', () => {
+    const entries = [edit('a1', 1, ['recipient', 'recipientId', 'awardedAt', 'awardNote'], { recipient: 'Aria', recipientId: null, awardedAt: '2026-11-05', awardNote: '' })]
+    const was = awardAsRecorded(now, entries)
+    assert.equal(was.recipient, 'Aria')
+    assert.equal(was.recipientId, undefined)
+    assert.equal(was.awardedAt, '2026-11-05')
+    assert.equal(was.awardNote, '')
+  })
+  it('lets the oldest entry win when a field was changed more than once, whatever order the entries come in', () => {
+    const entries = [edit('a1', 2, ['recipient'], { recipient: 'Cale' }), edit('a1', 1, ['recipient'], { recipient: 'Aria' })]
+    assert.equal(awardAsRecorded({ ...now, recipient: 'Brock' }, entries).recipient, 'Aria')
+  })
+  it('does not change the award it is given', () => {
+    const copy = { ...now }
+    awardAsRecorded(now, [edit('a1', 1, ['recipient'], { recipient: 'Aria' })])
+    assert.deepEqual(now, copy)
   })
 })

@@ -15,6 +15,30 @@ const person = (name: string) => ({ key: `name:${nameKey(name)}`, name: name.tri
 const entry = (overrides: Record<string, unknown>) => ({ targetType: 'priority', targetId: 'p1', item: 'Iron Ring', before: {}, after: {}, ...overrides }) as Parameters<typeof logFacts>[0]
 const slotOf = (item: { item: string; itemId?: number }) => (item.itemId === 101 ? 'Finger' : item.itemId === undefined ? 'Other' : undefined)
 
+describe('logFacts for a receipt that was removed', () => {
+  const award = { priorityId: 'p1', recipient: 'Brock', encounter: 'Test Hall \u00b7 Warden', prioritySnapshot: ['Aria', 'Brock'] }
+  const removal = entry({ targetType: 'award', targetId: 'a1', action: 'remove', item: 'Iron Ring', before: { status: null }, after: { status: 'removed', removedReason: 'Recorded twice' } })
+  it('is about who the award is for and where it came from, which the entry does not list', () => {
+    const facts = logFacts(removal, byId, who, (id) => (id === 'a1' ? award : undefined))
+    assert.deepEqual(facts.players.map((person) => person.name).sort(), ['Aria', 'Brock'])
+    assert.equal(facts.encounter, 'Test Hall \u00b7 Warden')
+    assert.equal(facts.itemId, 101)
+    assert.ok(matchesLogFilter(facts, { ...noLogFilter, player: 'name:brock' }, slotOf))
+    assert.ok(matchesLogFilter(facts, { ...noLogFilter, encounter: 'd:test hall' }, slotOf))
+    assert.ok(matchesLogFilter(facts, { ...noLogFilter, slot: 'Finger' }, slotOf))
+  })
+  it('knows nothing more than the entry when the award is not known', () => {
+    assert.deepEqual(logFacts(removal, byId, who).players, [])
+  })
+})
+
+describe('logFacts for a receipt that was moved', () => {
+  it('is about both people, so filtering by either finds the entry', () => {
+    const facts = logFacts(entry({ targetType: 'award', targetId: 'a1', item: 'Iron Ring', before: { recipient: 'Aria' }, after: { recipient: 'Brock' } }), byId, who)
+    assert.deepEqual(facts.players.map((entry) => entry.name).sort(), ['Aria', 'Brock'])
+  })
+})
+
 describe('logFacts', () => {
   it('takes what the entry lists, and the rest from the priority as it stands', () => {
     const facts = logFacts(entry({ after: { councilNote: 'x' } }), byId, who)

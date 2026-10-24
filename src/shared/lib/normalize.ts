@@ -78,6 +78,12 @@ export function normalizeAward(id: string, data: RawDoc): AwardRecord | null {
   // recipientId is kept only as text that says something, prioritySnapshotIds only as a list of text (see PriorityRecord.rankedIds).
   if (!isText(data.recipientId) || data.recipientId === '') delete award.recipientId
   if (!Array.isArray(data.prioritySnapshotIds) || !data.prioritySnapshotIds.every(isText)) delete award.prioritySnapshotIds
+  // status is 'active' or 'removed' (none means active), removedReason is text, decision is one of the three ways a manual award is decided, createdBy is
+  // text; anything else is taken away, so an odd value can never make an award count or look removed by accident.
+  if (data.status !== undefined && data.status !== 'active' && data.status !== 'removed') delete award.status
+  if (data.removedReason !== undefined && !isText(data.removedReason)) delete award.removedReason
+  if (data.decision !== undefined && data.decision !== 'roll' && data.decision !== 'council' && data.decision !== 'other') delete award.decision
+  if (data.createdBy !== undefined && !isText(data.createdBy)) delete award.createdBy
   return award
 }
 

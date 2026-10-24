@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { ArrowDown, ArrowUp, Check, ClipboardList, Lock, LockOpen, Pencil } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, ClipboardList, Lock, LockOpen, Pencil, X } from 'lucide-react'
 import type { AwardRecord as Award, PriorityRecord as LootPriority } from '../../guildApi'
 import { encounterArt, lootArt } from '../../shared/art'
 import { ArtIcon } from '../../shared/ui/ArtIcon'
@@ -14,9 +14,10 @@ import { zoneStyle, type ZoneColors } from './useZoneColors'
 import '../../shared/ui/spacing.css'
 import '../../shared/ui/zoneArt.css'
 import './PriorityList.css'
+import './ReceiptFix.css'
 
 // canEdit: the list can be changed (Add, Edit, reorder). canAward: loot can be awarded from it. Neither holds in a closed phase; `notice` says why.
-export function PriorityList({ priorities, awards, lookup, who, canEdit, canAward, notice, busy, grouped, bossOrder, zoneColors, phaseName, onEdit, onAward, onMoveCandidate }: { priorities: LootPriority[]; grouped: boolean; bossOrder: (dungeon: string) => string[]; zoneColors: ZoneColors; awards: Award[]; lookup: PriorityLookup; who: Who; canEdit: boolean; canAward: boolean; notice?: string; busy: boolean; onEdit: (priority: LootPriority) => void; onAward: (priority: LootPriority) => void; onMoveCandidate: (priority: LootPriority, index: number, direction: -1 | 1) => void; phaseName: (no: number) => string }) {
+export function PriorityList({ priorities, awards, lookup, who, canEdit, canAward, notice, busy, grouped, bossOrder, zoneColors, phaseName, onEdit, onAward, onMoveCandidate, onFixReceipt }: { priorities: LootPriority[]; grouped: boolean; bossOrder: (dungeon: string) => string[]; zoneColors: ZoneColors; awards: Award[]; lookup: PriorityLookup; who: Who; canEdit: boolean; canAward: boolean; notice?: string; busy: boolean; onEdit: (priority: LootPriority) => void; onAward: (priority: LootPriority) => void; onMoveCandidate: (priority: LootPriority, index: number, direction: -1 | 1) => void; onFixReceipt: (priority: LootPriority, award: Award) => void; phaseName: (no: number) => string }) {
   const unlocked = useUnlockedOrders()
   const row = (priority: LootPriority, index: number) => {
     const progress = listingProgress(priority, awards, lookup, who)
@@ -35,7 +36,7 @@ export function PriorityList({ priorities, awards, lookup, who, canEdit, canAwar
           const number = <span className={rank === progress.next ? 'rank-number first' : 'rank-number'}>{String(rank + 1).padStart(2, '0')}</span>
           if (line.kind === 'note') return <li key={`${name}-${rank}`} className={line.done ? 'listing-note note-done' : 'listing-note'}>{number}<span className="ranked-name">{name}</span>{line.done ? <span className="received-tag"><Check size={10} /> DONE</span> : rank === progress.next && <span className="top-pick">NEXT UP</span>}{reorder}</li>
           const cls = who.classOf(line)
-          return <li key={`${name}-${rank}`} className={[progress.received[rank] ? 'listing-received' : '', cls ? classAccent(cls) : ''].filter(Boolean).join(' ') || undefined}>{number}<span className="ranked-name">{name}</span>{line.id !== undefined && !who.known(line) && <span className="not-on-roster">not on the roster</span>}{progress.received[rank] && <span className="received-tag"><Check size={10} /> RECEIVED</span>}{rank === progress.next && <span className="top-pick">{rank === 0 ? 'TOP PICK' : 'NEXT UP'}</span>}{reorder}</li>
+          return <li key={`${name}-${rank}`} className={[progress.received[rank] ? 'listing-received' : '', cls ? classAccent(cls) : ''].filter(Boolean).join(' ') || undefined}>{number}<span className="ranked-name">{name}</span>{line.id !== undefined && !who.known(line) && <span className="not-on-roster">not on the roster</span>}{progress.received[rank] && <span className="received-tag"><Check size={10} /> RECEIVED</span>}{open && progress.receipts[rank] && <button className="receipt-fix" onClick={() => onFixReceipt(priority, progress.receipts[rank]!)} disabled={busy} title="Fix this receipt: move it to someone else, or remove it if it was a mistake" aria-label={`Fix the receipt of ${priority.item} for ${name}`}><X size={11} /></button>}{rank === progress.next && <span className="top-pick">{rank === 0 ? 'TOP PICK' : 'NEXT UP'}</span>}{reorder}</li>
         })}</ol> : <div className="unranked">Needs players{canEdit && <>: use Assign players to add them in order.</>}</div>}
       </div>
       {canEdit && <div className="priority-actions">{recentAward && <span className="awarded-tag"><Check size={13} /> Last awarded {new Date(`${recentAward.awardedAt}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>}{!priority.rankedPlayers.length && <button className="button button-secondary" onClick={() => onEdit(priority)} disabled={busy}>Assign players</button>}{canAward && <button className="button button-award" onClick={() => onAward(priority)} disabled={busy || !priority.rankedPlayers.length}><Check size={14} /> Award loot</button>}<button className="button button-secondary" onClick={() => onEdit(priority)} disabled={busy} title="Edit this priority: the item, the players and the council note" aria-label={`Edit priority for ${priority.item}`}><Pencil size={14} /> Edit Prio</button></div>}

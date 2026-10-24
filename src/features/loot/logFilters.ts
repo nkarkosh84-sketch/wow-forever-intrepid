@@ -5,6 +5,8 @@ import { matchesEncounterScope } from './groupPriorities.ts'
 // of an entry are worked out from the entry and, where it does not say, from the priority it is about as it stands now. Pure; Node tests it.
 type EntryLike = { targetType: string; targetId: string; item: string; before: Record<string, unknown>; after: Record<string, unknown> }
 type PriorityLike = { id: string; item: string; encounter: string; rankedPlayers: string[]; rankedIds?: string[]; itemId?: number }
+// An award as it stands now. An entry that removes or moves one lists only what it changed, so the rest (who it is for, the priority it came from) is read from here.
+type AwardLike = Record<string, unknown>
 
 // A person an entry is about: the key says who (an id, or a name for someone the roster does not know), the name is what the dropdown shows.
 export type Person = { key: string; name: string }
@@ -28,15 +30,19 @@ const linePeople = (names: unknown, ids: unknown, who: Who): Person[] =>
   readLines({ rankedPlayers: namesOf(names), rankedIds: ids }).flatMap((line) => { const key = who.lineKey(line); return key !== undefined && who.nameOf(line).trim() !== '' ? [{ key, name: who.nameOf(line).trim() }] : [] })
 const namesOf = (value: unknown) => (Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [])
 
-export function logFacts(entry: EntryLike, priorityById: (id: string) => PriorityLike | undefined, who: Who): LogFacts {
+export function logFacts(entry: EntryLike, priorityById: (id: string) => PriorityLike | undefined, who: Who, awardById?: (id: string) => AwardLike | undefined): LogFacts {
   if (entry.targetType === 'phase') return { about: 'phase', item: '', encounter: '', players: [] }
   if (entry.targetType === 'table') return { about: 'table', item: '', encounter: '', players: [] }
-  const field = (name: string) => entry.after[name] ?? entry.before[name]
+  const award = entry.targetType === 'award' ? awardById?.(entry.targetId) : undefined
+  const field = (name: string) => entry.after[name] ?? entry.before[name] ?? award?.[name]
   const priority = priorityById(entry.targetType === 'award' ? text(field('priorityId')) : entry.targetId)
   const itemId = typeof field('itemId') === 'number' ? (field('itemId') as number) : priority?.itemId
   const recipientId = text(field('recipientId'))
+  // A receipt moved to someone else is about both people: who had it and who has it now.
+  const beforeId = text(entry.before.recipientId)
+  const was = text(entry.before.recipient) ? [{ key: who.awardKey({ recipient: text(entry.before.recipient), ...(beforeId ? { recipientId: beforeId } : {}) }), name: (beforeId ? who.player(beforeId)?.name : undefined) ?? text(entry.before.recipient) }] : []
   const players = entry.targetType === 'award'
-    ? [...(text(field('recipient')) ? [{ key: who.awardKey({ recipient: text(field('recipient')), ...(recipientId ? { recipientId } : {}) }), name: (recipientId ? who.player(recipientId)?.name : undefined) ?? text(field('recipient')) }] : []), ...linePeople(field('prioritySnapshot'), field('prioritySnapshotIds'), who)]
+    ? [...(text(field('recipient')) ? [{ key: who.awardKey({ recipient: text(field('recipient')), ...(recipientId ? { recipientId } : {}) }), name: (recipientId ? who.player(recipientId)?.name : undefined) ?? text(field('recipient')) }] : []), ...was, ...linePeople(field('prioritySnapshot'), field('prioritySnapshotIds'), who)]
     : [...linePeople(entry.before.rankedPlayers, entry.before.rankedIds, who), ...linePeople(entry.after.rankedPlayers, entry.after.rankedIds, who), ...(priority ? linePeople(priority.rankedPlayers, priority.rankedIds, who) : [])]
   return { about: 'item', item: entry.item || priority?.item || '', ...(itemId !== undefined ? { itemId } : {}), encounter: text(field('encounter')) || priority?.encounter || '', players: unique(players) }
 }

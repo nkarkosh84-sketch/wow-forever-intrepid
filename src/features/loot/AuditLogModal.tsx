@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { subscribeAuditLog } from '../../guildApi'
 import { makeWho } from '../../shared/game/candidates'
 import { TABLE_PHASE_MAX, firstPhases } from '../../shared/game/guildTables'
-import { legacyAwardEntry, type AuditEntry } from '../../shared/game/lootAudit'
+import { awardAsRecorded, isLegacyAward, legacyAwardEntry, legacyRowUncertain, type AuditEntry } from '../../shared/game/lootAudit'
 import { currentPhaseNo, phaseName } from '../../shared/game/phases'
 import { peekItem, requestItem } from '../../shared/lib/itemInfo'
 import type { TabContext } from '../../shared/tabs/types'
@@ -53,14 +53,20 @@ export function AuditLogModal({ close, live }: { close: () => void; live: TabCon
   const bossOrder = useBossOrder(live.data.lootTables, nowNo)
   const zones = useMergedTables(live.data.lootTables, TABLE_PHASE_MAX, true)
   const first = useMemo(() => firstPhases(live.data.lootTables), [live.data.lootTables])
-  const lookups = { firstZonePhase: (zoneId: number) => first.zones.get(zoneId), firstSourcePhase: (zoneId: number, key: string) => first.sources.get(`${zoneId}_${key}`), zoneName: (zoneId: number) => zones.find((zone) => zone.zoneId === zoneId)?.name, sourceName: (zoneId: number, key: string) => zones.find((zone) => zone.zoneId === zoneId)?.sources.find((source) => source.key === key)?.name, itemName: (itemId: number) => { const state = peekItem(itemId); return state?.status === 'ready' ? state.info.name : undefined } }
+  const who = useMemo(() => makeWho(live.data.roster), [live.data.roster])
+  const awardsById = new Map(live.data.awards.map((award) => [award.id, award]))
+  const lookups = { firstZonePhase: (zoneId: number) => first.zones.get(zoneId), firstSourcePhase: (zoneId: number, key: string) => first.sources.get(`${zoneId}_${key}`), zoneName: (zoneId: number) => zones.find((zone) => zone.zoneId === zoneId)?.name, sourceName: (zoneId: number, key: string) => zones.find((zone) => zone.zoneId === zoneId)?.sources.find((source) => source.key === key)?.name, itemName: (itemId: number) => { const state = peekItem(itemId); return state?.status === 'ready' ? state.info.name : undefined }, awardRecipient: (id: string) => { const award = awardsById.get(id); return award ? ((award.recipientId !== undefined ? who.player(award.recipientId)?.name : undefined) ?? award.recipient) : undefined } }
   // A phase started or reopened changes which lists are current, so it is shown with the priorities.
   const wanted = (type: string) => (show === 'all' ? type === 'priority' || type === 'award' || type === 'phase' || type === 'table' : show === 'priority' ? type === 'priority' || type === 'phase' : show === 'table' ? type === 'table' : type === 'award')
-  const earlier = live.data.awards.filter((award) => award.rev === undefined).map(legacyAwardEntry)
+  // An award from before the Log began has no entry, so it is added from the award itself (isLegacyAward: a correction gives it a revision and an entry of its
+  // own, and it must not drop out of the Log by that). Its row says what it said when it was recorded: a later correction is its own entry, with the old and new value.
+  const more = entries !== null && entries.length >= limit
+  const earlier = live.data.awards.filter(isLegacyAward).map((award) => legacyAwardEntry(awardAsRecorded(award, entries ?? [])))
+  // Only the newest entries are loaded, so the first row of such an award that was fixed can be unsure: its fix is not among them, and it can only show the award as it is now.
+  const unsure = new Set(live.data.awards.filter((award) => legacyRowUncertain(award, entries ?? [], more)).map((award) => `before-${award.id}`))
   const text = query.trim().toLowerCase()
-  const who = useMemo(() => makeWho(live.data.roster), [live.data.roster])
   const priorities = new Map([...live.data.allPriorities, ...live.data.hiddenPriorities].map((priority) => [priority.id, priority]))
-  const everything = [...(entries ?? []), ...earlier].filter((entry) => wanted(entry.targetType)).map((entry) => ({ entry, facts: logFacts(entry, (id) => priorities.get(id), who) }))
+  const everything = [...(entries ?? []), ...earlier].filter((entry) => wanted(entry.targetType)).map((entry) => ({ entry, facts: logFacts(entry, (id) => priorities.get(id), who, (id) => awardsById.get(id) as Record<string, unknown> | undefined) }))
   // The dropdowns offer what the entries are about; looking the items up is what lets the slot filter tell which ones match.
   const itemKey = [...new Set(everything.flatMap(({ facts }) => (facts.itemId ? [facts.itemId] : [])))].join(',')
   useEffect(() => { if (itemKey) itemKey.split(',').forEach((id) => requestItem(Number(id))) }, [itemKey])
@@ -70,9 +76,8 @@ export function AuditLogModal({ close, live }: { close: () => void; live: TabCon
   const rows = everything
     .filter(({ facts }) => matchesLogFilter(facts, filter, slotOf))
     .sort((a, b) => (newestFirst ? timeOf(b.entry) - timeOf(a.entry) : timeOf(a.entry) - timeOf(b.entry)))
-    .map(({ entry }) => ({ entry, ...describeEntry(entry, name, lookups) }))
+    .map(({ entry }) => { const words = describeEntry(entry, name, lookups); return { entry, ...words, details: unsure.has(entry.id) ? [...words.details, 'Older entries are not loaded yet, so this shows the award as it is now. Load older entries to see how it was first recorded.'] : words.details } })
     .filter(({ entry, title, details }) => !text || [title, entry.byName, ...details].join(' ').toLowerCase().includes(text))
-  const more = entries !== null && entries.length >= limit
   const narrowed = !!text || logFilterActive(filter)
 
   return <Modal title="Log" onClose={close}><div className="audit-log">

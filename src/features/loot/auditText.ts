@@ -62,6 +62,8 @@ export type TableLookups = {
   itemName?: (itemId: number) => string | undefined
   firstZonePhase?: (zoneId: number) => number | undefined
   firstSourcePhase?: (zoneId: number, key: string) => number | undefined
+  // Who an award is for as it stands now: an entry about a removal or a restore lists no recipient, so the Log asks for it.
+  awardRecipient?: (awardId: string) => string | undefined
 }
 
 const numbers = (value: unknown) => (Array.isArray(value) ? value.filter((entry): entry is number => typeof entry === 'number') : [])
@@ -179,8 +181,23 @@ export function describeEntry(entry: AuditEntry, phaseName: (no: number) => stri
         const who = typeof entry.after.recipient === 'string' ? entry.after.recipient : 'someone'
         return { title: `Awarded ${item} to ${who}`, details: listed(entry.after).filter((line) => !/^(Item|Recipient|Priority):/.test(line)) }
       }
-      case 'remove': return { title: `Removed the award of ${item}`, details: [...visible(entry.changed).filter((field) => field !== 'status' && field !== 'removedReason').map(change), ...reason] }
-      default: return { title: `Corrected the award of ${item}`, details: [...visible(entry.changed).map(change), ...reason] }
+      case 'remove': {
+        const to = lookups.awardRecipient?.(entry.targetId)
+        return { title: `Removed the award of ${item}${to ? ` to ${to}` : ''}`, details: [...visible(entry.changed).filter((field) => field !== 'status' && field !== 'removedReason').map(change), ...reason] }
+      }
+      default: {
+        // A removed award put back is an edit that makes it active again (and takes the reason away).
+        if (entry.changed.includes('status') && entry.after.status === 'active') {
+          const to = lookups.awardRecipient?.(entry.targetId)
+          const was = typeof entry.before.removedReason === 'string' && entry.before.removedReason.trim() ? [`It was removed because: ${clip(entry.before.removedReason)}`] : []
+          return { title: `Restored the award of ${item}${to ? ` to ${to}` : ''}`, details: [...was, ...visible(entry.changed).filter((field) => field !== 'status' && field !== 'removedReason').map(change), ...reason] }
+        }
+        // A receipt moved to someone else: one entry that says who had it and who has it now.
+        if (entry.changed.includes('recipient') && typeof entry.before.recipient === 'string' && typeof entry.after.recipient === 'string') {
+          return { title: `Moved the award of ${item} from ${entry.before.recipient} to ${entry.after.recipient}`, details: [...visible(entry.changed).filter((field) => field !== 'recipient').map(change), ...reason] }
+        }
+        return { title: `Corrected the award of ${item}`, details: [...visible(entry.changed).map(change), ...reason] }
+      }
     }
   }
   return { title: `${entry.action} ${entry.targetType} ${item}`, details: [...entry.changed.map(change), ...reason] }
