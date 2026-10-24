@@ -6,6 +6,7 @@ Earlier releases have not been reconstructed here. These entries do not assert t
 
 ## Unreleased
 
+- The Log on Loot priorities now shows which loot phase each entry is for, in a column beside the time, and has a Phase dropdown next to Player, Slot and Encounter. Typing a phase's name in the find box also finds what was done in it, so a search across every phase reads down one list (LOOT-013).
 - Every other page (My dashboard, Raid teams, Guild Calendar, Scheduled Raids, Raid History, Leadership Overview and Member access) now uses the same margins and spacing as Settings and Loot priorities: content starts the same distance from the edge, cards share the same gaps, corners and padding, Scheduled Raids is inset once instead of twice, and Raid History no longer sits against the edge. The Guild roster table still runs edge to edge (UX-006).
 - Settings and the loot pages now share one set of margins and spacing: every Settings card sits the same distance from the edge with the same gap between cards, the headings on Loot priorities line up with the rows under them, and the loot dialogs (Browse drops, the drop list editor, Carry over and the Log) share one padding and corner. The raid team name fields on Settings have one width, a clear heading for each team size and each team's color beside its field (UX-005).
 - Raid Calendar is now called Guild Calendar to reflect both raids and unavailable dates.

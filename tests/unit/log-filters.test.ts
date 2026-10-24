@@ -63,8 +63,8 @@ describe('matchesLogFilter', () => {
     assert.equal(matchesLogFilter({ ...facts, encounter: '' }, { ...noLogFilter, encounter: 'd:test hall' }, slotOf), false)
   })
   it('needs every dropdown that is set to match, and hides a phase entry as soon as one is set', () => {
-    assert.ok(matchesLogFilter(facts, { player: 'name:brock', slot: 'Finger', encounter: 'd:test hall' }, slotOf))
-    assert.equal(matchesLogFilter(facts, { player: 'name:brock', slot: 'Head', encounter: 'd:test hall' }, slotOf), false)
+    assert.ok(matchesLogFilter(facts, { ...noLogFilter, player: 'name:brock', slot: 'Finger', encounter: 'd:test hall' }, slotOf))
+    assert.equal(matchesLogFilter(facts, { ...noLogFilter, player: 'name:brock', slot: 'Head', encounter: 'd:test hall' }, slotOf), false)
     assert.equal(matchesLogFilter({ about: 'phase', item: '', encounter: '', players: [] }, { ...noLogFilter, player: 'name:aria' }, slotOf), false)
     assert.equal(matchesLogFilter({ about: 'table', item: '', encounter: '', players: [] }, { ...noLogFilter, player: 'name:aria' }, slotOf), false)
     assert.ok(matchesLogFilter({ about: 'table', item: '', encounter: '', players: [] }, noLogFilter, slotOf))

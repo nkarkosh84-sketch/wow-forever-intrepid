@@ -15,7 +15,17 @@
 .audit-entry summary:hover { background: #f5f8fb; }
 .audit-title { flex: 1 1 auto; min-width: 0; overflow: hidden; color: #29372f; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .audit-entry details[open] .audit-title { overflow: visible; white-space: normal; }
-.audit-when { flex: none; color: #626e7b; font-size: 10px; white-space: nowrap; }
+/* The loot phase the entry is for: one column, so the rows line up and a search across phases reads down the list. */
+.audit-phase { flex: none; align-self: center; box-sizing: border-box; width: 96px; padding: 0 7px; overflow: hidden; border-radius: 9px; color: #4a6075; background: #eef3f8; font-size: 9.5px; font-weight: 700; line-height: 16px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+/* The time has one width too, so the phase column lines up whatever the time reads. */
+.audit-when { flex: none; min-width: 104px; color: #626e7b; font-size: 10px; text-align: right; white-space: nowrap; }
+/* On a phone the title keeps its whole line, and the phase and the time sit under it. */
+@media (max-width: 600px) {
+  .audit-entry summary { flex-wrap: wrap; row-gap: 3px; }
+  .audit-title { flex: 1 1 calc(100% - 24px); }
+  .audit-phase { width: auto; max-width: 150px; margin-left: 14px; }
+  .audit-when { min-width: 0; margin-left: auto; }
+}
 .audit-body { display: grid; gap: 3px; padding: 2px 10px 7px 20px; color: #3e5368; font-size: 10.5px; line-height: 1.45; overflow-wrap: anywhere; }
 .audit-body p { margin: 0; color: #626e7b; }
 .audit-body ul { display: grid; gap: 1px; margin: 0; padding-left: var(--nest-indent); }
@@ -23,6 +33,7 @@
 .audit-error { margin: 0; color: #9a3b2c; font-size: 11px; font-weight: 600; }
 .audit-more { justify-self: center; }
 :root[data-theme='dark'] .audit-intro { color: #bfccd9; }
+:root[data-theme='dark'] .audit-phase { color: #bfccd9; background: #243448; }
 :root[data-theme='dark'] .audit-list { border-color: #33465c; }
 :root[data-theme='dark'] .audit-entry { border-bottom-color: #2a3b4f; border-left-color: #5f95bd; background: #182536; }
 :root[data-theme='dark'] .audit-entry.audit-award { border-left-color: #c9a24b; }

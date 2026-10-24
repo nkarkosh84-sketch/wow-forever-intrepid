@@ -16,6 +16,8 @@ export type LogFacts = {
   itemId?: number
   encounter: string
   players: Person[]
+  // The loot phase the entry is for (see entryPhase.ts); none when it cannot be told. Set by the Log, not by logFacts.
+  phase?: number
 }
 
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
@@ -41,14 +43,17 @@ export function logFacts(entry: EntryLike, priorityById: (id: string) => Priorit
   return { about: 'item', item: entry.item || priority?.item || '', ...(itemId !== undefined ? { itemId } : {}), encounter: text(field('encounter')) || priority?.encounter || '', players: unique(players) }
 }
 
-export type LogFilter = { player: string; slot: string; encounter: string }
-export const noLogFilter: LogFilter = { player: '', slot: '', encounter: '' }
-export const logFilterActive = (filter: LogFilter) => !!(filter.player || filter.slot || filter.encounter)
+// `phase` is a phase number as text, or '' for every phase.
+export type LogFilter = { player: string; slot: string; encounter: string; phase: string }
+export const noLogFilter: LogFilter = { player: '', slot: '', encounter: '', phase: '' }
+export const logFilterActive = (filter: LogFilter) => !!(filter.player || filter.slot || filter.encounter || filter.phase)
 
 // Whether an entry passes the dropdowns. `slotOf` gives the slot choice of an item, or undefined while its lookup has not finished (it matches
-// no slot until it has).
+// no slot until it has). The phase applies to every kind of entry; the others are about an item, so a phase or drop list entry matches none of them.
 export function matchesLogFilter(facts: LogFacts, filter: LogFilter, slotOf: (item: { item: string; itemId?: number }) => string | undefined): boolean {
   if (!logFilterActive(filter)) return true
+  if (filter.phase !== '' && facts.phase !== Number(filter.phase)) return false
+  if (!filter.player && !filter.slot && !filter.encounter) return true
   if (facts.about !== 'item') return false
   return (!filter.encounter || (facts.encounter !== '' && matchesEncounterScope(facts.encounter, filter.encounter)))
     && (!filter.player || facts.players.some((person) => person.key === filter.player))

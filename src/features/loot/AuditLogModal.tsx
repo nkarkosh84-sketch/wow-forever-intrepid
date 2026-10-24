@@ -3,11 +3,12 @@ import { subscribeAuditLog } from '../../guildApi'
 import { makeWho } from '../../shared/game/candidates'
 import { TABLE_PHASE_MAX, firstPhases } from '../../shared/game/guildTables'
 import { legacyAwardEntry, type AuditEntry } from '../../shared/game/lootAudit'
-import { currentPhaseNo, phaseName } from '../../shared/game/phases'
+import { currentPhaseNo, phaseLabel, phaseName, phaseNoOf, phaseOptions } from '../../shared/game/phases'
 import { peekItem, requestItem } from '../../shared/lib/itemInfo'
 import type { TabContext } from '../../shared/tabs/types'
 import { Modal } from '../../shared/ui/Modal'
 import { describeEntry } from './auditText'
+import { entryPhase, phasesFromEntries } from './entryPhase'
 import { encounterOptions } from './groupPriorities'
 import { logFacts, logFilterActive, logPlayers, matchesLogFilter, noLogFilter, type LogFilter } from './logFilters'
 import { slotChoices } from './slots'
@@ -60,7 +61,13 @@ export function AuditLogModal({ close, live }: { close: () => void; live: TabCon
   const text = query.trim().toLowerCase()
   const who = useMemo(() => makeWho(live.data.roster), [live.data.roster])
   const priorities = new Map([...live.data.allPriorities, ...live.data.hiddenPriorities].map((priority) => [priority.id, priority]))
-  const everything = [...(entries ?? []), ...earlier].filter((entry) => wanted(entry.targetType)).map((entry) => ({ entry, facts: logFacts(entry, (id) => priorities.get(id), who) }))
+  // The loot phase each entry is for (a column of the list and a filter), from the award or priority it is about as it stands now, else from the entries
+  // about it, so it is told for an entry that does not list the phase and for a priority that is gone (see entryPhase.ts).
+  const allEntries = [...(entries ?? []), ...earlier]
+  const known = phasesFromEntries(allEntries)
+  const awardsById = new Map(live.data.awards.map((award) => [award.id, award]))
+  const phaseLookups = { awardPhase: (id: string) => { const award = awardsById.get(id); return award ? phaseNoOf(award) : undefined }, priorityPhase: (id: string) => { const priority = priorities.get(id); return priority ? phaseNoOf(priority) : undefined }, fromEntries: (key: string) => known.get(key) }
+  const everything = allEntries.filter((entry) => wanted(entry.targetType)).map((entry) => { const phase = entryPhase(entry, phaseLookups); return { entry, facts: { ...logFacts(entry, (id) => priorities.get(id), who), ...(phase !== undefined ? { phase } : {}) } } })
   // The dropdowns offer what the entries are about; looking the items up is what lets the slot filter tell which ones match.
   const itemKey = [...new Set(everything.flatMap(({ facts }) => (facts.itemId ? [facts.itemId] : [])))].join(',')
   useEffect(() => { if (itemKey) itemKey.split(',').forEach((id) => requestItem(Number(id))) }, [itemKey])
@@ -70,13 +77,14 @@ export function AuditLogModal({ close, live }: { close: () => void; live: TabCon
   const rows = everything
     .filter(({ facts }) => matchesLogFilter(facts, filter, slotOf))
     .sort((a, b) => (newestFirst ? timeOf(b.entry) - timeOf(a.entry) : timeOf(a.entry) - timeOf(b.entry)))
-    .map(({ entry }) => ({ entry, ...describeEntry(entry, name, lookups) }))
-    .filter(({ entry, title, details }) => !text || [title, entry.byName, ...details].join(' ').toLowerCase().includes(text))
+    .map(({ entry, facts }) => ({ entry, phase: facts.phase, ...describeEntry(entry, name, lookups) }))
+    // The phase's name is searchable too, so typing it finds what was done in that phase.
+    .filter(({ entry, phase, title, details }) => !text || [title, entry.byName, phase === undefined ? '' : name(phase), ...details].join(' ').toLowerCase().includes(text))
   const more = entries !== null && entries.length >= limit
   const narrowed = !!text || logFilterActive(filter)
 
   return <Modal title="Log" onClose={close}><div className="audit-log">
-    <p className="audit-intro">Every change to a loot priority, an award, a phase or a drop list, newest first. Open a line to see who made it and what changed. Nobody can edit or delete an entry.</p>
+    <p className="audit-intro">Every change to a loot priority, an award, a phase or a drop list, newest first, with the loot phase each one is for. Open a line to see who made it and what changed. Nobody can edit or delete an entry.</p>
     <div className="audit-controls">
       <div className="segmented-control audit-toggle" role="group" aria-label="What to show">
         {shows.map((option) => <button key={option.value} type="button" className={show === option.value ? 'segment selected' : 'segment'} aria-pressed={show === option.value} onClick={() => setShow(option.value)}>{option.label}</button>)}
@@ -96,6 +104,10 @@ export function AuditLogModal({ close, live }: { close: () => void; live: TabCon
         <option value="">All encounters</option>
         {encounters.map((option) => <option key={option.value} value={option.value}>{option.level === 1 ? indent : ''}{option.label}</option>)}
       </select>
+      <select className="loot-filter-select" aria-label="Filter by phase" value={filter.phase} onChange={(event) => setFilter({ ...filter, phase: event.target.value })}>
+        <option value="">All phases</option>
+        {phaseOptions(live.data.settings, true).map((option) => <option key={option.no} value={String(option.no)}>{phaseLabel(option)}</option>)}
+      </select>
       <select className="loot-filter-select" aria-label="Order" value={newestFirst ? 'newest' : 'oldest'} onChange={(event) => setNewestFirst(event.target.value === 'newest')}>
         <option value="newest">Newest first</option>
         <option value="oldest">Oldest first</option>
@@ -105,11 +117,11 @@ export function AuditLogModal({ close, live }: { close: () => void; live: TabCon
     {error && <p className="audit-error" role="alert">The Log could not be read: {error}</p>}
     {!error && entries === null && <p className="audit-empty">Loading...</p>}
     {entries !== null && rows.length === 0 && <p className="audit-empty">{narrowed ? 'Nothing here matches.' : 'Nothing has been logged yet.'}{narrowed && more ? ' Load older entries to look further back.' : ''}</p>}
-    <ol className="audit-list">{rows.map(({ entry, title, details }) => {
+    <ol className="audit-list">{rows.map(({ entry, phase, title, details }) => {
       // One line each: what happened and when. Who did it and the fields are in the row that opens.
       return <li key={entry.id} className={`audit-entry audit-${entry.targetType}`}>
         <details>
-          <summary><span className="audit-title" title={title}>{title}</span><time className="audit-when">{entry.rev === 0 && entry.at ? entry.at.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : whenOf(entry.at)}</time></summary>
+          <summary><span className="audit-title" title={title}>{title}</span><span className="audit-phase" title={phase === undefined ? 'The loot phase of this entry could not be told' : `Loot phase: ${name(phase)}`}>{phase === undefined ? '—' : name(phase)}</span><time className="audit-when">{entry.rev === 0 && entry.at ? entry.at.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : whenOf(entry.at)}</time></summary>
           <div className="audit-body">
             <p>{entry.rev === 0 ? 'Recorded before the Log began (dated the raid night)' : <>By <strong>{entry.byName || 'Unknown'}</strong>{' '}{'\u00b7'}{' '}{entry.targetType === 'award' ? 'Award' : entry.targetType === 'phase' ? 'Phase' : entry.targetType === 'table' ? 'Drop list' : 'Priority'}{entry.at ? ` \u00b7 ${entry.at.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' })}` : ''}</>}</p>
             {details.length > 0 && <ul>{details.map((line) => <li key={line}>{line}</li>)}</ul>}
