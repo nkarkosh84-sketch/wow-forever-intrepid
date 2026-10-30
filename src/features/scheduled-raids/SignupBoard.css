@@ -1,0 +1,47 @@
+/* RAID-018: the Signups board of an opened Scheduled Raids row. Role columns (two to a row on a phone, four on a wide screen) with class sub-groups, then the other
+   responses as wrapping lists. Its names are read-only text, not touch targets. Selectors that meet App.css (.class-accent, .class-avatar) use two classes, because App.css
+   loads after this file. */
+.signup-board { display: grid; gap: 12px; min-width: 0; }
+.signup-board-total { margin: 0; color: #4f5f70; font-size: 12px; }
+.signup-board-total strong { color: var(--ink); font-size: 15px; font-variant-numeric: tabular-nums; }
+.signup-board-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); gap: 10px; min-width: 0; }
+.signup-board-column, .signup-board-status { display: grid; align-content: start; gap: 8px; min-width: 0; padding: 10px; border: 1px solid #e1e7ed; border-radius: var(--card-radius); background: #fff; }
+.signup-board h4, .signup-board h5 { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.signup-board h4 { color: var(--ink); font: 600 14px/1.3 var(--display); }
+.signup-board h4 svg { flex: none; }
+.signup-board h5 { font-size: 11px; font-weight: 700; line-height: 1.4; }
+.signup-board-count { flex: none; margin-left: auto; padding: 0 7px; border-radius: 99px; color: #34475a; background: #eef2f6; font: 700 11px/1.7 var(--sans); font-variant-numeric: tabular-nums; }
+.signup-board-class { display: grid; gap: 4px; min-width: 0; }
+.signup-board ul { display: grid; gap: 4px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.signup-board .signup-board-entry { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 32px; padding: 3px 6px 3px calc(var(--class-stripe-width, 6px) + 7px); }
+.signup-board-entry .class-avatar { flex: 0 0 24px; width: 24px; height: 24px; }
+.signup-board-name { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 5px; min-width: 0; overflow-wrap: anywhere; }
+.signup-board-name strong { font-size: 12px; }
+.signup-board-name small { font-size: 10px; }
+.signup-board-statuses { display: grid; gap: 10px; min-width: 0; }
+.signup-board-status ul { display: flex; flex-wrap: wrap; }
+.signup-board-status .signup-board-entry { max-width: 100%; }
+.signup-board-none { margin: 0; color: #5d6b7a; font-size: 11px; }
+.signup-board-column.role-tank h4 svg { color: #a45b42; }
+.signup-board-column.role-healer h4 svg { color: #547d47; }
+.signup-board-column.role-ranged h4 svg { color: #927333; }
+.signup-board-column.role-melee h4 svg { color: #476d9b; }
+/* The status counts take the colors of the response badges (ScheduledResponseSummary). */
+.signup-board-status.response-bench .signup-board-count { color: #70528d; background: #f7f1fb; }
+.signup-board-status.response-tentative .signup-board-count { color: #765c23; background: #fbf7e9; }
+.signup-board-status.response-late .signup-board-count { color: #355980; background: #f1f6fb; }
+.signup-board-status.response-absent .signup-board-count { color: #a13737; background: #fcf0f0; }
+.signup-board-status.response-unanswered .signup-board-count { color: #586879; background: #f8fafb; box-shadow: inset 0 0 0 1px #e4e9ed; }
+:root[data-theme='dark'] .signup-board-total { color: #a9b8c8; }
+:root[data-theme='dark'] .signup-board-column, :root[data-theme='dark'] .signup-board-status { border-color: #314157; background: #1c2838; }
+:root[data-theme='dark'] .signup-board-count { color: #d5e0ea; background: #263649; }
+:root[data-theme='dark'] .signup-board-none { color: #a9b8c8; }
+:root[data-theme='dark'] .signup-board-column.role-tank h4 svg { color: #f2b8a0; }
+:root[data-theme='dark'] .signup-board-column.role-healer h4 svg { color: #c2dfa9; }
+:root[data-theme='dark'] .signup-board-column.role-ranged h4 svg { color: #f0d797; }
+:root[data-theme='dark'] .signup-board-column.role-melee h4 svg { color: #b3d6f4; }
+:root[data-theme='dark'] .signup-board-status.response-bench .signup-board-count { color: #d7bdeb; background: #352c43; }
+:root[data-theme='dark'] .signup-board-status.response-tentative .signup-board-count { color: #f0d797; background: #393429; }
+:root[data-theme='dark'] .signup-board-status.response-late .signup-board-count { color: #b3d6f4; background: #26384c; }
+:root[data-theme='dark'] .signup-board-status.response-absent .signup-board-count { color: #ffb4ab; background: #432b30; }
+:root[data-theme='dark'] .signup-board-status.response-unanswered .signup-board-count { color: #c5d1de; background: #263649; box-shadow: inset 0 0 0 1px #405168; }

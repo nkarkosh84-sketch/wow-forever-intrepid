@@ -81,3 +81,15 @@
 :root[data-theme='dark'] .raid-row-caret { border-left-color: #9fb0c1; }
 :root[data-theme='dark'] .raid-row-summary:focus-visible { outline-color: #8cc4ea; }
 @media (max-width: 640px) { .raid-row-summary { min-height: 84px; } .raid-row-name { font-size: 15px; } }
+
+/* RAID-018: an opened row's Signups and Groups tabs, between the banner and the row's body (their tab panel). Each tab is at least 44px square, a phone touch target. */
+.raid-row-tabs { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; margin-top: 10px; border-bottom: 1px solid #dfe5ec; }
+.raid-row-tab { min-width: 44px; min-height: 44px; margin-bottom: -1px; padding: 0 16px; border: 0; border-bottom: 3px solid transparent; color: #556578; background: transparent; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.raid-row-tab:hover { color: #24476b; }
+.raid-row-tab[aria-selected='true'] { color: #24476b; border-bottom-color: #3c75a2; }
+.raid-row-tab:focus-visible { outline: 2px solid #3c75a2; outline-offset: -2px; }
+:root[data-theme='dark'] .raid-row-tabs { border-bottom-color: #314157; }
+:root[data-theme='dark'] .raid-row-tab { color: #a8b7c7; }
+:root[data-theme='dark'] .raid-row-tab:hover, :root[data-theme='dark'] .raid-row-tab[aria-selected='true'] { color: #d9ecfb; }
+:root[data-theme='dark'] .raid-row-tab[aria-selected='true'] { border-bottom-color: #8cc4ea; }
+:root[data-theme='dark'] .raid-row-tab:focus-visible { outline-color: #8cc4ea; }
