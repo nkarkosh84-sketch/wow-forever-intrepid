@@ -1,4 +1,4 @@
-// Editing, cancelling and restoring a raid (match /raids/{raidId}: update). Every change is one batch: the
+// Editing, cancelling, restoring and marking complete a raid (match /raids/{raidId}: update). Every change is one batch: the
 // raid update plus its audit entry (auditLog/raid_{id}_{rev}), like an award edit. A cancelled raid stays on
 // the calendar with status 'cancelled' and a reason. Guild Leaders and Raid Leaders may do it; nobody else.
 import assert from 'node:assert/strict'
@@ -395,6 +395,154 @@ describe('cancelling a raid', () => {
     await seed(cancelled())
     await expectDenied(changeRaid({ changes: { cancelReason: deleteField() } }))
   })
+})
+
+// Mark Complete (RAID-019): a Guild or Raid Leader marks a raid that has started complete, logged as 'complete', and can undo it (an edit back to
+// scheduled). Never before the start, never on a cancelled raid, never on a raid with no saved start time, and never by a Member.
+describe('marking a raid complete', () => {
+  const HOUR = 3_600_000
+  const started = (hoursAgo = 1) => Timestamp.fromMillis(Date.now() - hoursAgo * HOUR)
+  const markComplete = (overrides: Change = {}) => changeRaid({ action: 'complete', changes: { status: 'complete' }, ...overrides })
+  const seedStarted = (overrides: DocumentData = {}) => seed(raidDoc(UID.raidLeader, { startsAt: started(), ...overrides }))
+  const seedComplete = (overrides: DocumentData = {}) => seedStarted({ rev: 1, status: 'complete', updatedBy: UID.raidLeader, updatedAt: new Date('2026-12-01T00:00:00Z'), ...overrides })
+
+  for (const who of ['raidLeader', 'guildLeader'] as const) {
+    test(`a ${who} can mark a started raid complete, and the entry says so`, async () => {
+      await seedStarted()
+      await expectAllowed(markComplete({ who }))
+      const raid = await stored(`raids/${RAID}`)
+      assert.equal(raid?.status, 'complete')
+      assert.equal(raid?.rev, 1)
+      const entry = await stored(`auditLog/raid_${RAID}_1`)
+      assert.equal(entry?.action, 'complete')
+      assert.deepEqual(entry?.changed, ['status'])
+      assert.deepEqual(entry?.before, { status: null })
+      assert.deepEqual(entry?.after, { status: 'complete' })
+    })
+  }
+
+  test('a raid recorded as scheduled can be marked complete too, more than 5 hours after its start', async () => {
+    await seedStarted({ startsAt: started(30), status: 'scheduled' })
+    await expectAllowed(markComplete())
+    assert.deepEqual((await stored(`auditLog/raid_${RAID}_1`))?.before, { status: 'scheduled' })
+  })
+
+  test('a member cannot mark a raid complete, even with an honest entry', async () => {
+    await seedStarted()
+    await expectDenied(markComplete({ who: 'member' }))
+    assert.equal((await stored(`raids/${RAID}`))?.status, undefined)
+  })
+
+  test('a raid cannot be marked complete before its start', async () => {
+    await seedStarted({ startsAt: Timestamp.fromMillis(Date.now() + HOUR) })
+    await expectDenied(markComplete())
+    assert.equal((await stored(`raids/${RAID}`))?.status, undefined)
+  })
+
+  test('a raid with no saved start time cannot be marked complete', async () => {
+    await expectDenied(markComplete())
+    assert.equal((await stored(`raids/${RAID}`))?.status, undefined)
+    // Saving a start that has already passed in the same audited edit is accepted: the raid then has a start, and it has passed.
+    await expectAllowed(markComplete({ changes: { status: 'complete', startsAt: started() } }))
+  })
+
+  test('a cancelled raid cannot be marked complete, before or after its start', async () => {
+    for (const startsAt of [started(), Timestamp.fromMillis(Date.now() + HOUR)]) {
+      await seed(cancelled({ startsAt }))
+      await expectDenied(markComplete({ changes: { status: 'complete', cancelReason: deleteField() } }))
+      await expectDenied(markComplete())
+      assert.equal((await stored(`raids/${RAID}`))?.status, 'cancelled')
+    }
+  })
+
+  const refused: [string, Change][] = [
+    ['without its audit entry', { skipEntry: true }],
+    ['with an entry but no raid change', { skipRaid: true }],
+    ['logged as an edit', { action: 'edit' }],
+    ['logged as a cancellation', { action: 'cancel', entry: { reason: 'Done early' } }],
+    ['with a reason on the raid', { changes: { status: 'complete', cancelReason: 'Done early' } }],
+    ['with an entry that leaves the status out', { entry: { changed: [], before: {}, after: {} } }],
+    ['with an entry that says it went to scheduled', { entry: { after: { status: 'scheduled' } } }],
+    ['with an entry written under another name', { entry: { byName: 'Somebody Else' } }],
+  ]
+  for (const [what, change] of refused) {
+    test(`marking complete ${what} is refused`, async () => {
+      await seedStarted()
+      await expectDenied(markComplete(change))
+      assert.equal((await stored(`raids/${RAID}`))?.status, undefined)
+      assert.equal(await stored(`auditLog/raid_${RAID}_1`), undefined)
+    })
+  }
+
+  test('an edit that is not Mark Complete cannot be logged as complete', async () => {
+    await seedStarted()
+    await expectDenied(changeRaid({ action: 'complete', changes: { name: 'Renamed Raid' } }))
+    await seedComplete()
+    await expectDenied(changeRaid({ action: 'complete', changes: { name: 'Renamed Raid' } }), 'nor an edit of a raid that is already complete')
+  })
+
+  test('a complete raid can be corrected and stays complete, but cannot move to a start still to come', async () => {
+    await seedComplete()
+    await expectAllowed(changeRaid({ changes: { name: 'Corrected Raid' } }))
+    assert.equal((await stored(`raids/${RAID}`))?.status, 'complete')
+    const later = Timestamp.fromMillis(Date.now() + 24 * HOUR)
+    await expectDenied(changeRaid({ changes: { date: '2027-01-02', startsAt: later } }))
+    await expectAllowed(changeRaid({ changes: { date: '2026-12-08', startsAt: started(48) } }), 'an earlier start that has also passed is fine')
+    // What updateRaidEvent writes for a complete raid moved to a later start: back to scheduled in the same edit.
+    await expectAllowed(changeRaid({ changes: { date: '2027-01-02', startsAt: later, status: 'scheduled' } }))
+    const entry = await stored(`auditLog/raid_${RAID}_4`)
+    assert.equal(entry?.action, 'edit')
+    assert.deepEqual(entry?.changed, ['date', 'startsAt', 'status'])
+    assert.equal((await stored(`raids/${RAID}`))?.status, 'scheduled')
+  })
+
+  test('a leader can undo it, back to scheduled, logged as an edit', async () => {
+    await seedComplete()
+    await expectAllowed(changeRaid({ changes: { status: 'scheduled' } }))
+    const raid = await stored(`raids/${RAID}`)
+    assert.equal(raid?.status, 'scheduled')
+    assert.equal(raid?.rev, 2)
+    const entry = await stored(`auditLog/raid_${RAID}_2`)
+    assert.equal(entry?.action, 'edit')
+    assert.deepEqual(entry?.before, { status: 'complete' })
+    assert.deepEqual(entry?.after, { status: 'scheduled' })
+    await expectAllowed(markComplete(), 'and mark it again')
+    assert.equal((await stored(`auditLog/raid_${RAID}_3`))?.action, 'complete')
+  })
+
+  test('an undo logged as complete, without its entry, or by a member is refused', async () => {
+    await seedComplete()
+    await expectDenied(changeRaid({ action: 'complete', changes: { status: 'scheduled' } }))
+    await expectDenied(changeRaid({ changes: { status: 'scheduled' }, skipEntry: true }))
+    await expectDenied(changeRaid({ who: 'member', changes: { status: 'scheduled' } }))
+    assert.equal((await stored(`raids/${RAID}`))?.status, 'complete')
+  })
+
+  test('a complete raid can still be cancelled with a reason, and restoring it puts it back to scheduled', async () => {
+    await seedComplete()
+    await expectDenied(changeRaid({ action: 'complete', changes: { status: 'cancelled', cancelReason: 'Called off' } }))
+    await expectAllowed(changeRaid({ action: 'cancel', changes: { status: 'cancelled', cancelReason: 'Called off' } }))
+    assert.equal((await stored(`raids/${RAID}`))?.status, 'cancelled')
+    await expectAllowed(changeRaid({ changes: { status: 'scheduled', cancelReason: deleteField() } }))
+    assert.equal((await stored(`raids/${RAID}`))?.status, 'scheduled')
+  })
+
+  for (const who of ['raidLeader', 'guildLeader'] as const) {
+    test(`a ${who} can mark a ten-zone raid complete while changing every other detail, with an exact entry`, async () => {
+      const zones = tenZones().map((zone, index) => ({ ...zone, id: `${index}${'x'.repeat(99)}`, name: 'x'.repeat(80) }))
+      const old = { name: 'Original Raid', date: '2026-12-09', time: '21:00', size: 40, description: 'Original plan', zones, startsAt: started(3), status: 'scheduled' }
+      await seed(raidDoc(UID.raidLeader, old))
+      const changes = {
+        name: 'R'.repeat(80), date: '2026-12-08', time: '20:00', size: 20, description: 'D'.repeat(500),
+        zones: [...zones].reverse().map((zone) => ({ ...zone, name: 'R'.repeat(80) })), startsAt: started(2), status: 'complete',
+      }
+      await expectAllowed(changeRaid({ who, action: 'complete', changes }))
+      const entry = await stored(`auditLog/raid_${RAID}_1`)
+      assert.deepEqual(entry?.changed, Object.keys(changes))
+      assert.deepEqual(entry?.after, changes)
+      assert.equal((await stored(`raids/${RAID}`))?.status, 'complete')
+    })
+  }
 })
 
 describe('restoring a cancelled raid', () => {

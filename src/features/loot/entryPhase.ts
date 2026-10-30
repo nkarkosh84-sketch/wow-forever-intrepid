@@ -3,7 +3,8 @@
 // An entry only lists the fields that changed, and the phase of what it is about is not always one of them, so the phase is worked out from what the entry is
 // about: an award or a priority as it stands now (an award's phase can be corrected, a priority's never changes), else from the entries about the same
 // thing (a priority that was deleted is no longer there, but its first and last entries say its phase), else from the entry itself. A drop list entry carries
-// its phase in its document id, and a phase started or reopened is for the phase the guild is in afterwards. An entry whose phase cannot be told is none.
+// its phase in its document id, a phase started or reopened is for the phase the guild is in afterwards, and a change of one phase's start date is for
+// that phase. An entry whose phase cannot be told is none.
 
 type EntryLike = { targetType: string; targetId: string; rev: number; action: string; changed: string[]; before: Record<string, unknown>; after: Record<string, unknown> }
 
@@ -45,7 +46,14 @@ export function entryPhase(entry: EntryLike, lookups: PhaseLookups): number | un
   if (entry.targetType === 'phase') {
     // The history after the change lists the finished phases, so its length is the number of the phase the guild is in; a history taken away is the first phase.
     if (Array.isArray(entry.after.phaseHistory)) return entry.after.phaseHistory.length
-    return entry.changed.includes('phaseHistory') ? 0 : undefined
+    if (entry.changed.includes('phaseHistory')) return 0
+    // A change of the start dates alone (RAID-019) is for the one phase whose date it set, changed or took away; one that changed several is for none.
+    if (!entry.changed.includes('phaseStarts')) return undefined
+    const dates = (value: unknown) => (Array.isArray(value) ? value : [])
+    const before = dates(entry.before.phaseStarts)
+    const after = dates(entry.after.phaseStarts)
+    const moved = Array.from({ length: Math.max(before.length, after.length) }, (_, no) => no).filter((no) => (before[no] || '') !== (after[no] || ''))
+    return moved.length === 1 ? moved[0] : undefined
   }
   if (entry.targetType === 'table') return tableDocPhase(entry.targetId)
   const key = phaseKey(entry.targetType, entry.targetId)

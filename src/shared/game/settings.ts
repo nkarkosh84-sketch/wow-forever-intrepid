@@ -1,5 +1,5 @@
 import type { CouncilStatus, GuildSettings, StatusTone } from '../../guildApi'
-import { isPhaseRev, readPhaseHistory } from './phases.ts'
+import { isPhaseRev, readPhaseHistory, readPhaseStarts } from './phases.ts'
 
 export const SETTINGS_LABEL_MAX = 40
 
@@ -37,6 +37,7 @@ export function resolveGuildSettings(data: Record<string, unknown> | null | unde
   const groups = source.groupNames && typeof source.groupNames === 'object' ? (source.groupNames as Record<string, unknown>) : {}
   const names = source.teamNames && typeof source.teamNames === 'object' ? (source.teamNames as Record<string, unknown>) : {}
   const history = readPhaseHistory(source.phaseHistory, label)
+  const starts = readPhaseStarts(source.phaseStarts, (history?.length ?? 0) + 1)
   return {
     currentPhase: label(source.currentPhase, defaults.currentPhase),
     nextPhase: label(source.nextPhase, defaults.nextPhase),
@@ -57,6 +58,7 @@ export function resolveGuildSettings(data: Record<string, unknown> | null | unde
       brown: label(groups.brown, defaults.groupNames.brown),
     },
     ...(history ? { phaseHistory: history } : {}),
+    ...(starts ? { phaseStarts: starts } : {}),
     ...(isPhaseRev(source.phaseRev) ? { phaseRev: source.phaseRev } : {}),
   }
 }

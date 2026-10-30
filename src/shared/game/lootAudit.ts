@@ -7,8 +7,9 @@
 export const priorityAuditFields = ['item', 'encounter', 'rankedPlayers', 'rankedIds', 'councilNote', 'itemId', 'zoneId', 'npcId', 'phaseNo', 'carriedFrom', 'hidden'] as const
 // The fields an entry may list for a loot table document (a zone, a creature or a phase; see shared/game/guildTables.ts).
 export const tableAuditFields = ['type', 'zoneId', 'key', 'phaseNo', 'follows', 'name', 'kind', 'players', 'npcId', 'order', 'itemIds', 'hiddenItemIds', 'removed'] as const
-// The settings fields a phase entry lists (when a phase is started or reopened): the ones that differ, each with its old and new value.
-export const phaseAuditFields = ['currentPhase', 'nextPhase', 'phaseHistory'] as const
+// The settings fields a phase entry lists (when a phase is started or reopened, or the phase start dates change): the ones that differ, each with
+// its old and new value.
+export const phaseAuditFields = ['currentPhase', 'nextPhase', 'phaseHistory', 'phaseStarts'] as const
 export const awardCreateFields = ['priorityId', 'item', 'encounter', 'recipient', 'recipientId', 'awardedAt', 'prioritySnapshot', 'prioritySnapshotIds', 'councilNoteSnapshot', 'awardNote', 'phaseNo'] as const
 // A manual award (no priority, LOOT-002) lists every field it has when it is made, how it was decided included. The rules require the entry's `changed` list to be
 // exactly these, so this is not awardCreateFields with one more field: an award from a priority has a priority and a snapshot, and no `decision`.

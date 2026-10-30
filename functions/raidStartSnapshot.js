@@ -158,11 +158,13 @@ function dueRaidVersion(raid, audits, now) {
   }
   intervals.push({ state, from, to: now.toMillis() + 1 })
 
+  // The version in effect at its start is due unless it was cancelled. A raid marked complete (RAID-019) was started, so it is captured like any started raid: the rules
+  // allow 'complete' only once the start has passed, so the version at the start is normally still 'scheduled', and a 'complete' one (written outside the app) counts too.
   const candidates = intervals.flatMap(({ state: version, from: start, to: end }) => {
     const scheduledStartAt = version.startsAt
     const millis = toMillis(scheduledStartAt)
     if (millis === undefined || millis > now.toMillis() || start > millis || millis > end
-      || (version.status && version.status !== 'scheduled')) return []
+      || (version.status && !['scheduled', 'complete'].includes(version.status))) return []
     return [{ version, scheduledStartAt }]
   })
   candidates.sort((left, right) => left.scheduledStartAt.toMillis() - right.scheduledStartAt.toMillis())

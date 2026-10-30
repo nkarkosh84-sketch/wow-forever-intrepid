@@ -10,3 +10,16 @@
 .phases-confirm span { flex: 1 1 100%; font-weight: 600; }
 .phases-warning { margin: 0; padding: 9px var(--inner-pad-x); border: 1px solid #e3c9a8; border-radius: var(--card-radius); color: #6b4a1f; background: #fcf3e6; font-size: 11px; line-height: 1.5; }
 :root[data-theme='dark'] .phases-confirm, :root[data-theme='dark'] .phases-warning { border-color: #6f5a3a; color: #f1d9b0; background: #2c2619; }
+/* RAID-019: the start date of each phase, and the dialog that sets one. */
+.phases-dates { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid rgba(212, 175, 55, 0.18); }
+.phases-date-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.phases-date-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; font-size: 0.88rem; }
+.phases-date-name { display: flex; flex: 1 1 160px; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.phases-date-name small { font-weight: 400; opacity: 0.7; }
+.phases-date-value { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.phases-date-value.is-empty { opacity: 0.7; font-style: italic; }
+.phases-date-help { margin: 0; color: #526158; font-size: 11px; line-height: 1.5; }
+.phases-date-problem { margin: 0; color: #a1281f; font-size: 11px; font-weight: 600; line-height: 1.5; }
+.phases-date-actions { flex-wrap: wrap; }
+:root[data-theme='dark'] .phases-date-help { color: #c0cede; }
+:root[data-theme='dark'] .phases-date-problem { color: #ffb4ab; }

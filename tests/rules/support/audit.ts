@@ -138,8 +138,8 @@ export const removedAward = (overrides: DocumentData = {}) => awardDoc({ rev: 1,
 
 export { priorityDoc }
 
-/** The settings fields a phase entry lists. */
-export const PHASE_FIELDS = ['currentPhase', 'nextPhase', 'phaseHistory'] as const
+/** The settings fields a phase entry lists (the start dates since RAID-019). */
+export const PHASE_FIELDS = ['currentPhase', 'nextPhase', 'phaseHistory', 'phaseStarts'] as const
 
 export type PhaseChangeOptions = {
   into?: WriteBatch // add the writes to this batch and leave committing it to the caller
@@ -154,8 +154,9 @@ export type PhaseChangeOptions = {
 }
 
 /**
- * Start or reopen a loot phase: the settings document and its entry (phase_settings_{rev}) in one batch. The entry lists the phase fields that
- * differ between what is stored now (nothing on a first save) and what the batch stores, as the rules require. Honest unless overridden.
+ * Start or reopen a loot phase, or change the phase start dates (action 'edit'): the settings document and its entry (phase_settings_{rev}) in one
+ * batch. The entry lists the phase fields that differ between what is stored now (nothing on a first save) and what the batch stores, as the rules
+ * require. Honest unless overridden.
  */
 export async function changePhase(db: Firestore, who: Staff, { into, settings, rev = 1, action = 'start', audit = {}, doc = {}, entryKey, skipEntry = false, extraEntries = [] }: PhaseChangeOptions) {
   const current = await stored('settings/general')

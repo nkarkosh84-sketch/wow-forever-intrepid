@@ -32,6 +32,16 @@ describe('entryPhase for a phase started or reopened', () => {
   it('is none for an entry that does not say', () => {
     assert.equal(entryPhase(entry({ targetType: 'phase', action: 'start' }), none), undefined)
   })
+  it('is the phase whose start date a change of the dates set, changed or took away, and none when it moved several (RAID-019)', () => {
+    const dates = (before: unknown, after: unknown) => entry({ targetType: 'phase', targetId: 'settings', action: 'edit', changed: ['phaseStarts'], before: { phaseStarts: before }, after: { phaseStarts: after } })
+    assert.equal(entryPhase(dates(null, ['', '2026-08-30']), none), 1)
+    assert.equal(entryPhase(dates(['', '2026-08-30'], ['', '2026-08-31']), none), 1)
+    assert.equal(entryPhase(dates(['2026-06-01', '2026-08-30'], ['2026-06-01']), none), 1)
+    assert.equal(entryPhase(dates(null, ['2026-06-01', '2026-08-30']), none), undefined)
+  })
+  it('is still the phase the guild is in for a start that records a date', () => {
+    assert.equal(entryPhase(entry({ targetType: 'phase', action: 'start', changed: ['phaseHistory', 'phaseStarts'], after: { phaseHistory: ['Launch prep'], phaseStarts: ['', '2026-10-29'] } }), none), 1)
+  })
 })
 
 describe('entryPhase for a drop list change', () => {

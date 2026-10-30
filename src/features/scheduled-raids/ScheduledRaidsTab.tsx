@@ -46,7 +46,7 @@ export function ScheduledRaidsTab({ ctx }: { ctx: TabContext }) {
   return <div className="scheduled-raids-tool">
     {gone && <p role="status" className="scheduled-raids-gone">That raid is no longer in Scheduled Raids, which keeps a raid until 5 hours after it starts. Its record is in Raid History. <button className="button button-secondary" onClick={() => ctx.navigate('raid-history')}>Open Raid History</button></p>}
     {listed.length
-      ? <div className="scheduled-raids-list">{listed.map((raid) => <RaidRow key={raid.id} raid={raid} ctx={ctx} closed={isClosedRaid(raid, now)} open={openIds.has(raid.id)} onToggle={toggle} />)}</div>
+      ? <div className="scheduled-raids-list">{listed.map((raid) => <RaidRow key={raid.id} raid={raid} ctx={ctx} now={now} closed={isClosedRaid(raid, now)} open={openIds.has(raid.id)} onToggle={toggle} />)}</div>
       : <p>No scheduled raids right now. A raid is listed from the moment it is scheduled until 5 hours after it starts; Raid History keeps the rest. <button className="button button-secondary" onClick={() => ctx.navigate('afk')}>Open Guild Calendar</button></p>}
   </div>
 }

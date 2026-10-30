@@ -30,6 +30,7 @@ import { EMPTY_ZONE_ART, ZONE_IMAGE_LIMIT, fullPath, isImageName, newImageId, re
 import { awardCreateFields, awardEditFields, manualAwardCreateFields, describeCreate, describeDelete, describeEdit, phaseAuditFields, priorityAuditFields, readAuditEntry, tableAuditFields, type AuditEntry } from './shared/game/lootAudit'
 import { normalizeDocs, type Normalizer } from './shared/lib/normalize'
 import { raidStartDate } from './shared/lib/raidStart'
+import { isMarkedComplete } from './shared/raids/raidCategory'
 import { sameRaidZones } from './shared/raids/zoneSnapshots'
 import { setMembershipRemoved as writeMembershipRemoved } from './shared/members/access'
 import { normalizeCharacterRequest, type CharacterProposal, type CharacterRequest } from './shared/characters/requests'
@@ -77,7 +78,8 @@ export type AfkEntryRecord = { id: string; userId: string; displayName: string; 
 export type CommentKind = 'public' | 'leadership'
 export const COMMENT_MAX_LENGTH = 300
 export type RaiderType = 'casual' | 'hardcore'
-export type RaidStatus = 'scheduled' | 'cancelled'
+// A raid's stored status. 'complete' is Mark Complete (RAID-019); a raid's category (Scheduled, In Progress, Complete, Cancelled) is derived from it and the clock in shared/raids/raidCategory.ts.
+export type RaidStatus = 'scheduled' | 'cancelled' | 'complete'
 export type RaidSize = 10 | 20 | 40
 export type RaidZoneRecord = { id: string; name: string; size: RaidSize }
 export type RaidRecord = {
@@ -114,7 +116,10 @@ export type GuildSettings = {
   groupNames: Record<RaidGroup, string>
   // The names of the finished phases, oldest first. Its length is the number of the current phase. Absent until a phase has been closed.
   phaseHistory?: string[]
-  // How many times a phase has been started or reopened (each one is in the Log). Absent until the first.
+  // The day each phase started (RAID-019): one Eastern date "YYYY-MM-DD" per phase, finished ones first, then the current one, '' for a phase with
+  // no date; never longer than the phases, never ending with a blank, never going backwards (shared/game/phases.ts). Absent until a phase has a date.
+  phaseStarts?: string[]
+  // How many times a phase has been started or reopened, or the start dates changed (each one is in the Log). Absent until the first.
   phaseRev?: number
 }
 export type GuildSettingsRecord = GuildSettings & { id: string }
@@ -428,15 +433,16 @@ export async function pickZoneArt(zoneKey: string, imageId: string | null, who: 
   })
 }
 
-// Starting a phase or reopening one saves the settings together with its Log entry (`phase_settings_{n}`, n counting every start and reopen),
-// which the rules require, so nobody can move the phase without it showing. The entry says what the phase fields were before: what is stored now
-// (nothing on a guild's first save, which is why the stored document is read here), not what this browser last showed.
-export async function changePhase(next: GuildSettings, action: 'start' | 'reopen', who: AuditWho) {
+// Starting a phase or reopening one, and setting or correcting a phase's start date ('edit', RAID-019), saves the settings together with its Log
+// entry (`phase_settings_{n}`, n counting every start, reopen and change of the dates), which the rules require, so nobody can move the phase or
+// its dates without it showing. The entry says what the phase fields were before: what is stored now (nothing on a guild's first save, which is
+// why the stored document is read here), not what this browser last showed.
+export async function changePhase(next: GuildSettings, action: 'start' | 'reopen' | 'edit', who: AuditWho) {
   const database = requireDb()
   const ref = doc(database, 'guilds', guildId, 'settings', 'general')
   const stored = (await getDoc(ref)).data() ?? {}
   const rev = nextPhaseRev(stored)
-  const description = describeEdit(stored, { currentPhase: next.currentPhase, nextPhase: next.nextPhase, phaseHistory: next.phaseHistory }, phaseAuditFields)
+  const description = describeEdit(stored, { currentPhase: next.currentPhase, nextPhase: next.nextPhase, phaseHistory: next.phaseHistory, phaseStarts: next.phaseStarts }, phaseAuditFields)
   if (!description) throw new Error('Nothing was changed.')
   const batch = writeBatch(database)
   batch.set(ref, { ...next, phaseRev: rev })
@@ -520,7 +526,7 @@ const REMOVE_FIELD = deleteField()
 
 // Every raid change is one batch: the raid update and its audit entry (raid_{id}_{rev}). The rules accept
 // neither without the other, and check that the entry tells the truth about what changed.
-async function writeRaidChange(raid: RaidRecord, changes: Record<string, unknown>, action: 'edit' | 'cancel', who: RaidWho, reason?: string) {
+async function writeRaidChange(raid: RaidRecord, changes: Record<string, unknown>, action: 'edit' | 'cancel' | 'complete', who: RaidWho, reason?: string) {
   const database = requireDb()
   const rev = (raid.rev ?? 0) + 1
   const current = raid as unknown as Record<string, unknown>
@@ -549,6 +555,9 @@ export async function updateRaidEvent(raid: RaidRecord, edit: RaidEdit, who: Rai
   const changes: Record<string, unknown> = {}
   const startsAt = Timestamp.fromDate(raidStartDate(edit.date ?? raid.date, edit.time ?? raidTimeOf(raid)))
   if (!raid.startsAt?.isEqual(startsAt)) changes.startsAt = startsAt
+  // A raid marked complete (RAID-019) that moves to a start still to come has not been held at that time, so the same audited edit puts it back to scheduled (the rules
+  // refuse a complete raid whose start is still to come).
+  if (isMarkedComplete(raid) && startsAt.toMillis() > Date.now()) changes.status = 'scheduled'
   for (const key of ['name', 'date', 'size'] as const) if (edit[key] !== undefined && edit[key] !== raid[key]) changes[key] = edit[key]
   if (edit.zones !== undefined && !sameRaidZones(edit.zones, raid.zones ?? [])) changes.zones = edit.zones
   if (edit.time !== undefined && edit.time !== raidTimeOf(raid)) changes.time = edit.time
@@ -569,6 +578,20 @@ export async function cancelRaidEvent(raid: RaidRecord, reason: string, who: Rai
 export async function restoreRaidEvent(raid: RaidRecord, who: RaidWho) {
   if (!isRaidCancelled(raid)) throw new Error('This raid is not cancelled.')
   await writeRaidChange(raid, { status: 'scheduled', cancelReason: REMOVE_FIELD }, 'edit', who)
+}
+
+// Mark Complete (RAID-019): a Guild or Raid Leader marks a raid that has started complete, one audited change like a cancel (the rules refuse it before the start, on a
+// cancelled raid and for anyone else). Undoing it is an audited edit back to scheduled, like restoring a cancelled raid.
+export async function markRaidComplete(raid: RaidRecord, who: RaidWho) {
+  if (isRaidCancelled(raid)) throw new Error('A cancelled raid cannot be marked complete.')
+  if (isMarkedComplete(raid)) throw new Error('This raid is already marked complete.')
+  if (!raid.startsAt || raid.startsAt.toMillis() > Date.now()) throw new Error('A raid can be marked complete only once it has started.')
+  await writeRaidChange(raid, { status: 'complete' }, 'complete', who)
+}
+
+export async function undoRaidComplete(raid: RaidRecord, who: RaidWho) {
+  if (!isMarkedComplete(raid)) throw new Error('This raid is not marked complete.')
+  await writeRaidChange(raid, { status: 'scheduled' }, 'edit', who)
 }
 
 // ---- Loot priorities and awards. Every change is one batch of the change and its audit entry (`priority_{id}_{rev}` or `award_{id}_1`).

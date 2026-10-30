@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { deleteDoc, getDoc, setDoc, writeBatch } from 'firebase/firestore'
 import { ANY_ROLE, LABEL, LEADER_ONLY, SIGNED_IN, without, type Persona } from './support/fixtures.ts'
-import { asAdmin, dbFor, expectAllowed, expectDenied, guildDoc, setUpGuildEmulator, stored } from './support/harness.ts'
+import { asAdmin, dbFor, expectAllowed, expectDenied, guildDoc, resetData, setUpGuildEmulator, stored } from './support/harness.ts'
 import { changePhase, clean, entry, entryId } from './support/audit.ts'
 
 setUpGuildEmulator()
@@ -421,5 +421,227 @@ describe('the change log entry of a phase', () => {
     await expectDenied(setDoc(guildDoc(dbFor('guildLeader'), path), { ...before, item: 'Rewritten' }), 'rewriting it')
     await expectDenied(deleteDoc(guildDoc(dbFor('guildLeader'), path)), 'deleting it')
     assert.deepEqual(await stored(path), before)
+  })
+})
+
+// RAID-019: the day each loot phase started (`phaseStarts`): one Eastern date "YYYY-MM-DD" per phase in the order of their numbers (the finished
+// phases, then the current one), '' for a phase with no date, never longer than the phases there are and never going backwards. A change of the
+// list is a step of `phaseRev` with its own entry (action 'edit'); starting a phase records its date in the start's entry, and reopening one takes
+// it away in the reopen's entry. Only a Guild Leader writes the settings.
+describe('the phase start dates', () => {
+  // Phase two is current: two finished phases, so a list can have up to three dates.
+  const HISTORY = ['Launch prep', 'Phase one']
+  const base = (starts?: unknown[]) => ({ ...validSettings(), currentPhase: 'Phase two', nextPhase: 'To be announced', phaseHistory: HISTORY, ...(starts ? { phaseStarts: starts } : {}) })
+  const stage = (starts?: unknown[], rev = 2) => asAdmin((db) => setDoc(guildDoc(db, 'settings/general'), { ...base(starts), phaseRev: rev }))
+  // A change of the dates with its honest entry, at the next revision unless told otherwise.
+  const setStarts = (starts: unknown[] | undefined, options: Omit<Parameters<typeof changePhase>[2], 'settings'> = {}) =>
+    changePhase(dbFor('guildLeader'), 'guildLeader', { settings: base(starts), rev: 3, action: 'edit', ...options })
+  const plain = (starts?: unknown[], rev = 2) => save('guildLeader', { ...base(starts), phaseRev: rev })
+  const entryAt = (rev: number) => stored(`auditLog/${entryId('phase', 'settings', rev)}`)
+
+  test('a Guild Leader can set the dates with the next revision and an edit entry that says what they were and are', async () => {
+    await stage()
+    await expectAllowed(setStarts(['', '2026-08-30', '2026-10-09']))
+    const saved = await stored('settings/general')
+    assert.deepEqual(saved?.phaseStarts, ['', '2026-08-30', '2026-10-09'])
+    assert.equal(saved?.phaseRev, 3)
+    const logged = await entryAt(3)
+    assert.equal(logged?.action, 'edit')
+    assert.equal(logged?.item, 'Phase two')
+    assert.deepEqual(logged?.changed, ['phaseStarts'])
+    assert.deepEqual(logged?.before, { phaseStarts: null })
+    assert.deepEqual(logged?.after, { phaseStarts: ['', '2026-08-30', '2026-10-09'] })
+  })
+
+  test('a date can be corrected, and taken away, each as its own step', async () => {
+    await stage(['', '2026-08-30', '2026-10-09'])
+    await expectAllowed(setStarts(['', '2026-08-31', '2026-10-09']), 'a corrected date')
+    await expectAllowed(setStarts(['', '2026-08-31'], { rev: 4 }), 'the current phase date taken away')
+    await expectAllowed(setStarts(undefined, { rev: 5 }), 'every date taken away')
+    assert.equal((await stored('settings/general'))?.phaseStarts, undefined)
+    assert.deepEqual((await entryAt(5))?.after, { phaseStarts: null })
+  })
+
+  test('the first save of the settings can set the date of the first phase, with its entry', async () => {
+    await expectAllowed(changePhase(dbFor('guildLeader'), 'guildLeader', { settings: { ...validSettings(), phaseStarts: ['2026-06-01'] }, action: 'edit' }))
+    assert.deepEqual((await stored('settings/general'))?.phaseStarts, ['2026-06-01'])
+  })
+
+  test('a change of the dates without its entry, or without the next revision, is refused', async () => {
+    await stage()
+    await expectDenied(setStarts(['2026-08-30'], { skipEntry: true }), 'no entry')
+    await expectDenied(plain(['2026-08-30']), 'a plain save that leaves the revision alone')
+    await expectDenied(plain(['2026-08-30'], 3), 'a plain save one step up, without an entry')
+    await expectDenied(setStarts(['2026-08-30'], { rev: 4 }), 'a revision too far ahead')
+    await expectDenied(setStarts(['2026-08-30'], { rev: 2 }), 'the revision that already exists')
+    assert.equal((await stored('settings/general'))?.phaseStarts, undefined)
+  })
+
+  test('a Raid Leader and a Member cannot change the dates', async () => {
+    await stage()
+    for (const who of ['raidLeader', 'member'] as const) await expectDenied(changePhase(dbFor(who), 'raidLeader', { settings: base(['2026-08-30']), rev: 3, action: 'edit' }), LABEL[who])
+    assert.equal((await stored('settings/general'))?.phaseStarts, undefined)
+  })
+
+  test('saving the other settings leaves the dates and the revision as they are and needs no entry, and cannot drop or change them', async () => {
+    await stage(['', '2026-08-30'])
+    await expectAllowed(save('guildLeader', { ...base(['', '2026-08-30']), councilStatus: 'live', phaseRev: 2 }), 'the council status saved, the dates unchanged')
+    assert.deepEqual((await stored('settings/general'))?.phaseStarts, ['', '2026-08-30'])
+    await expectDenied(plain(), 'the dates dropped by a plain save')
+    await expectDenied(plain(['', '2026-08-31']), 'a date changed by a plain save')
+  })
+
+  test('each entry is a date or nothing (a phase with no date), and the list ends with a date', async () => {
+    for (const starts of [['2026-08-30'], ['', '2026-08-30'], ['', '', '2026-10-09'], ['2026-08-30', '', '2026-10-09'], ['2026-01-01', '2026-02-28', '2026-12-31']]) {
+      await resetData()
+      await stage()
+      await expectAllowed(setStarts(starts), JSON.stringify(starts))
+    }
+    await resetData()
+    await stage()
+    const refused: unknown[][] = [
+      [''], ['2026-08-30', ''], ['', ''], // padded at the end
+      ['2026-8-30'], ['26-08-30'], ['2026-08-3'], ['2026-13-01'], ['2026-00-10'], ['2026-08-32'], ['2026-08-00'], ['2026/08/30'], ['20260830'], ['2026-08-30T00:00'], [' 2026-08-30'], ['yesterday'],
+      [20260830], [null], [true], [{ date: '2026-08-30' }], ['', 5, '2026-10-09'],
+      // text that would look like dates once the list is joined
+      ['2026-08-30|2026-09-30'], ['2026-08-30,2026-09-30'], ['||||||||||'], ['2026-08-302026-09-30'], ['2026-08-30|', '2026-09-30'],
+    ]
+    for (const starts of refused) await expectDenied(setStarts(starts), JSON.stringify(starts))
+  })
+
+  test('a list that is not a list is refused', async () => {
+    await stage()
+    for (const phaseStarts of ['2026-08-30', { 0: '2026-08-30' }, 1, true]) await expectDenied(changePhase(dbFor('guildLeader'), 'guildLeader', { settings: { ...base(), phaseStarts }, rev: 3, action: 'edit' }), JSON.stringify(phaseStarts))
+  })
+
+  test('the list has no more entries than there are phases, finished and current', async () => {
+    await stage()
+    await expectAllowed(setStarts(['2026-06-01', '2026-08-30', '2026-10-09']), 'one for each of the three phases')
+    await resetData()
+    await stage()
+    await expectDenied(setStarts(['2026-06-01', '2026-08-30', '2026-10-09', '2026-10-20']), 'one for the next phase too')
+    await expectDenied(setStarts(['', '', '', '2026-10-20']), 'only one for the next phase')
+    await resetData()
+    await expectDenied(changePhase(dbFor('guildLeader'), 'guildLeader', { settings: { ...validSettings(), phaseStarts: ['2026-06-01', '2026-08-30'] }, action: 'edit' }), 'two on the first save, which has one phase')
+  })
+
+  test('the dates never go backwards, across a phase with no date too, and two phases can start on the same day', async () => {
+    await stage()
+    await expectDenied(setStarts(['2026-08-30', '2026-08-29']), 'a day before the earlier phase')
+    await expectDenied(setStarts(['2026-10-09', '', '2026-08-30']), 'before an earlier phase, with a phase between them that has no date')
+    await expectDenied(setStarts(['', '2026-10-09', '2026-08-30']), 'the current phase before the finished one')
+    await expectDenied(setStarts(['2027-01-01', '2026-12-31']), 'across a new year')
+    await expectAllowed(setStarts(['2026-08-30', '2026-08-30', '2026-08-30']), 'all on the same day')
+  })
+
+  // The widest lists: 30 finished phases and the current one, every entry a date. The order rule is written out pair by pair, so the last pair is
+  // the one most likely to be left out, and these are the writes with the least room in the 1000 expressions one write may evaluate (measured by
+  // padding the rules: a start, a reopen and a first save have room for about 50 more small checks in the entry, an edit of all 31 dates for 25 to
+  // 50, and a start that also corrects an earlier date, which the app never sends, for fewer than 25).
+  describe('the widest lists', () => {
+    const names = (count: number) => Array.from({ length: count }, (_, index) => `Phase ${index + 1}`)
+    const day = (index: number) => `2026-${String(Math.floor(index / 28) + 1).padStart(2, '0')}-${String((index % 28) + 1).padStart(2, '0')}`
+    const days = (count: number) => Array.from({ length: count }, (_, index) => day(index))
+    const at = (finished: number, starts?: string[]) => ({ ...validSettings(), currentPhase: `Phase ${finished + 1}`, nextPhase: finished === 30 ? 'To be announced' : `Phase ${finished + 2}`, phaseHistory: names(finished), ...(starts ? { phaseStarts: starts } : {}) })
+    const storeAt = (finished: number, starts?: string[]) => asAdmin((db) => setDoc(guildDoc(db, 'settings/general'), { ...at(finished, starts), phaseRev: finished }))
+    const go = (settings: Record<string, unknown>, rev: number, action = 'edit') => changePhase(dbFor('guildLeader'), 'guildLeader', { settings, rev, action })
+
+    test('an edit of 31 dates is checked to its last pair, and a 32nd date is refused', async () => {
+      await storeAt(30)
+      const full = (last: string) => [...days(30), last]
+      await expectDenied(go(at(30, full('2026-02-01')), 31), 'the 31st before the 30th')
+      await expectDenied(go(at(30, [...full('2026-03-01'), '2026-03-02']), 31), 'a 32nd date')
+      await expectAllowed(go(at(30, full('2026-03-01')), 31), 'all 31 in order')
+    })
+
+    test('the 30th finished phase can be started with all 31 dates, and reopened again', async () => {
+      await storeAt(29, days(30))
+      await expectAllowed(go({ ...at(30, days(31)), nextPhase: 'To be announced' }, 30, 'start'), 'the start')
+      await expectAllowed(go({ ...at(29, days(30)), nextPhase: 'Phase 31' }, 31, 'reopen'), 'the reopen')
+      assert.deepEqual((await stored('settings/general'))?.phaseStarts, days(30))
+    })
+
+    test('a start that also corrects an earlier date is checked pair by pair', async () => {
+      await storeAt(29, days(30))
+      const corrected = days(31)
+      corrected[0] = '2026-01-03'
+      await expectDenied(go({ ...at(30, corrected), nextPhase: 'To be announced' }, 30, 'start'), 'the first date moved after the second')
+      corrected[0] = '2025-12-31'
+      await expectAllowed(go({ ...at(30, corrected), nextPhase: 'To be announced' }, 30, 'start'), 'the first date moved earlier')
+    })
+  })
+
+  test('a start that adds more than its own date, or a reopen that also changes a date, is checked pair by pair', async () => {
+    await stage(['', '2026-08-30'])
+    const started = (starts: string[]) => ({ ...base(starts), currentPhase: 'Phase three', phaseHistory: [...HISTORY, 'Phase two'] })
+    await expectDenied(changePhase(dbFor('guildLeader'), 'guildLeader', { settings: started(['', '2026-08-30', '2026-11-01', '2026-10-29']), rev: 3 }), 'two dates added, out of order')
+    await expectAllowed(changePhase(dbFor('guildLeader'), 'guildLeader', { settings: started(['', '2026-08-30', '2026-09-15', '2026-10-29']), rev: 3 }), 'two dates added, in order')
+    await resetData()
+    await stage(['', '2026-08-30', '2026-10-09'])
+    const reopened = (starts: string[]) => ({ ...base(starts), currentPhase: 'Phase one', nextPhase: 'Phase two', phaseHistory: ['Launch prep'] })
+    await expectDenied(changePhase(dbFor('guildLeader'), 'guildLeader', { settings: reopened(['2026-09-01', '2026-08-30']), rev: 3, action: 'reopen' }), 'a reopen that dates the first phase after the second')
+    await expectAllowed(changePhase(dbFor('guildLeader'), 'guildLeader', { settings: reopened(['2026-06-01', '2026-08-30']), rev: 3, action: 'reopen' }), 'a reopen that also dates the first phase, in order')
+  })
+
+  test('starting a phase records its date in the same save, and its entry lists the dates', async () => {
+    await stage(['', '2026-08-30'])
+    const next = { ...base(['', '2026-08-30', '', '2026-10-29']), currentPhase: 'Phase three', phaseHistory: [...HISTORY, 'Phase two'] }
+    await expectAllowed(changePhase(dbFor('guildLeader'), 'guildLeader', { settings: next, rev: 3 }))
+    const logged = await entryAt(3)
+    assert.equal(logged?.action, 'start')
+    assert.deepEqual([...((logged?.changed ?? []) as string[])].sort(), ['currentPhase', 'phaseHistory', 'phaseStarts'])
+    assert.deepEqual(logged?.before?.phaseStarts, ['', '2026-08-30'])
+    assert.deepEqual(logged?.after?.phaseStarts, ['', '2026-08-30', '', '2026-10-29'])
+  })
+
+  test('a start that dates the new phase before an earlier one is refused', async () => {
+    await stage(['', '2026-08-30', '2026-10-09'])
+    const next = (starts: string[]) => ({ ...base(starts), currentPhase: 'Phase three', phaseHistory: [...HISTORY, 'Phase two'] })
+    await expectDenied(changePhase(dbFor('guildLeader'), 'guildLeader', { settings: next(['', '2026-08-30', '2026-10-09', '2026-10-01']), rev: 3 }), 'backwards')
+    await expectAllowed(changePhase(dbFor('guildLeader'), 'guildLeader', { settings: next(['', '2026-08-30', '2026-10-09', '2026-10-09']), rev: 3 }), 'the same day')
+  })
+
+  test('reopening a phase has to take its date away in the same save', async () => {
+    await stage(['', '2026-08-30', '2026-10-09'])
+    const reopened = (starts?: string[]) => ({ ...base(starts), currentPhase: 'Phase one', nextPhase: 'Phase two', phaseHistory: ['Launch prep'] })
+    await expectDenied(changePhase(dbFor('guildLeader'), 'guildLeader', { settings: reopened(['', '2026-08-30', '2026-10-09']), rev: 3, action: 'reopen' }), 'the date of the phase being left kept')
+    await expectAllowed(changePhase(dbFor('guildLeader'), 'guildLeader', { settings: reopened(['', '2026-08-30']), rev: 3, action: 'reopen' }), 'its date taken away')
+    assert.deepEqual((await entryAt(3))?.after, { currentPhase: 'Phase one', nextPhase: 'Phase two', phaseHistory: ['Launch prep'], phaseStarts: ['', '2026-08-30'] })
+  })
+
+  test('reopening the first finished phase can leave a guild with no dates', async () => {
+    await asAdmin((db) => setDoc(guildDoc(db, 'settings/general'), { ...validSettings(), currentPhase: 'Phase one', nextPhase: 'To be announced', phaseHistory: ['Launch prep'], phaseStarts: ['', '2026-10-09'], phaseRev: 1 }))
+    await expectAllowed(changePhase(dbFor('guildLeader'), 'guildLeader', { settings: { ...validSettings(), currentPhase: 'Launch prep', nextPhase: 'Phase one' }, rev: 2, action: 'reopen' }))
+    assert.equal((await stored('settings/general'))?.phaseStarts, undefined)
+  })
+
+  test('the entry of a change of the dates is an edit, and a start or a reopen keeps its own action', async () => {
+    await stage()
+    for (const action of ['start', 'reopen', 'create', 'remove', 'delete', 'Edit', '']) await expectDenied(setStarts(['2026-08-30'], { action }), `the action "${action}" for the dates`)
+    const started = { ...base(), currentPhase: 'Phase three', phaseHistory: [...HISTORY, 'Phase two'] }
+    await expectDenied(changePhase(dbFor('guildLeader'), 'guildLeader', { settings: started, rev: 3, action: 'edit' }), 'an edit entry for a start')
+    const reopened = { ...base(), currentPhase: 'Phase one', nextPhase: 'Phase two', phaseHistory: ['Launch prep'] }
+    await expectDenied(changePhase(dbFor('guildLeader'), 'guildLeader', { settings: reopened, rev: 3, action: 'edit' }), 'an edit entry for a reopen')
+    await expectAllowed(setStarts(['2026-08-30']), 'the honest edit')
+  })
+
+  test('an entry that lies about the dates, or leaves them out, is refused', async () => {
+    await stage(['', '2026-08-30'])
+    await expectDenied(setStarts(['', '2026-08-31'], { audit: { before: { phaseStarts: ['', '2026-08-29'] } } }), 'a wrong old list')
+    await expectDenied(setStarts(['', '2026-08-31'], { audit: { after: { phaseStarts: ['', '2026-08-30'] } } }), 'a wrong new list')
+    await expectDenied(setStarts(['', '2026-08-31'], { audit: { changed: [], before: {}, after: {} } }), 'the dates left out')
+    await expectDenied(setStarts(['', '2026-08-31'], { audit: { changed: ['phaseStarts', 'councilStatus'] } }), 'a field that is not a phase field')
+    await expectDenied(setStarts(['', '2026-08-31'], { audit: { item: 'Phase one' } }), 'another phase as the item')
+    await expectAllowed(setStarts(['', '2026-08-31']), 'the honest entry')
+  })
+
+  test('an edit entry cannot be written alone, and a later change of the dates needs one of its own', async () => {
+    await stage()
+    const db = dbFor('guildLeader')
+    const batch = writeBatch(db)
+    batch.set(guildDoc(db, `auditLog/${entryId('phase', 'settings', 3)}`), clean(entry('guildLeader', 'phase', 'settings', 3, { action: 'edit', item: 'Phase two', changed: [], before: {}, after: {} })))
+    await expectDenied(batch.commit(), 'an entry with no change of the settings')
+    await expectAllowed(setStarts(['2026-08-30']), 'the honest change')
+    await expectDenied(plain(['2026-08-31'], 3), 'a later change of the dates with no entry of its own')
   })
 })

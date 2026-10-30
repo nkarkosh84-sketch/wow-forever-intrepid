@@ -61,6 +61,12 @@ Use an invented Member account to add a range, then use the pencil beside it in 
 
 Move, shrink and expand a range across future raids, including another overlapping unavailable entry. Previously covered raids retain Absent; newly covered raids become Absent and lose that account's main/alt scheduled placements. Once no unavailable entry overlaps, the member may explicitly change their response; old placements are never restored. Started/cancelled raids and published snapshots remain unchanged. Server tests cover authorization, ranges, concurrency and transactional rollback. Deploy the `updateUnavailableDates` Function before Hosting after explicit release approval; existing add/remove clients remain compatible. No data migration is required.
 
+### Raid categories and Mark Complete (RAID-019)
+
+Seed invented raids in each category: one still to come, one started under 5 hours ago, one marked complete, one cancelled before and one after its start, one started more than 5 hours ago, one with no saved start time, one with a published start snapshot and one whose capture failed, plus a few hundred older ones. In **Raid History > All raids** check each raid's category, newest first, the category counts and filter, the month filter and Show more; **Audit Info** must show the published snapshot exactly as before and not the failed one. In **Scheduled Raids**, as a Guild Leader and as a Raid Leader, open the started raid and press **Mark complete** (the chip says Complete, and Raid History follows), then **Undo complete**. There is no button before the start, on a cancelled raid, for a Member or in a VIEW AS Member preview. Moving a complete raid to a later start in Edit Raid puts it back to Scheduled. Check both themes at 375px and 320px.
+
+Phase filter: with no phase start dates, the **Phase** filter in All raids is disabled and says why. As a Guild Leader, in **Settings > Loot phases > Start dates**, set dates (leave the first phase without one, date a finished phase and the current one): a date after today, before an earlier phase or after a later one is refused with a reason, and each change is in the Log. All raids then shows each phase's raids by date (a phase's start day belongs to it, the day before to the phase before) and every raid under All phases. Start a phase and check today's date is recorded; reopen it and check that date is gone.
+
 ```bash
 npm run build
 npm run lint

@@ -69,6 +69,7 @@
 .raid-row-chip { grid-column: 2; grid-row: 1 / span 2; align-self: end; padding: 3px 9px; border-radius: 99px; font-size: 11px; font-weight: 700; line-height: 1.4; white-space: nowrap; }
 .raid-row-chip-cancelled { color: #a1281f; background: #fff0ee; }
 .raid-row-chip-closed { color: #2a4a68; background: #e8eef5; }
+.raid-row-chip-complete { color: #22603a; background: #e4f3e8; }
 .raid-row-caret { flex: none; width: 0; height: 0; border-left: 5px solid #5d6b78; border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: transform .12s; }
 .raid-row[open] > .raid-row-summary .raid-row-caret { transform: rotate(90deg); }
 .raid-row-body { display: grid; gap: var(--stack-gap); min-width: 0; padding-top: var(--stack-gap); }
@@ -78,6 +79,7 @@
 :root[data-theme='dark'] .raid-row-meta { color: #c4d0dc; background: rgba(15, 24, 36, .78); }
 :root[data-theme='dark'] .raid-row-chip-cancelled { color: #ffb4ab; background: #542222; }
 :root[data-theme='dark'] .raid-row-chip-closed { color: #c7dcf0; background: #243a52; }
+:root[data-theme='dark'] .raid-row-chip-complete { color: #b6e6c4; background: #1f4030; }
 :root[data-theme='dark'] .raid-row-caret { border-left-color: #9fb0c1; }
 :root[data-theme='dark'] .raid-row-summary:focus-visible { outline-color: #8cc4ea; }
 @media (max-width: 640px) { .raid-row-summary { min-height: 84px; } .raid-row-name { font-size: 15px; } }

@@ -397,6 +397,9 @@ service cloud.firestore {
     // A raid edit or cancellation is accepted only together with its audit entry (type 'raid'), like an award edit.
     // A cancelled raid stays on the calendar with status 'cancelled' and a reason; it can be put back to
     // 'scheduled', which clears the reason. Raids made before this change have no rev or status (scheduled).
+    // Mark Complete (RAID-019) sets status 'complete' (entry action 'complete') and undoing it puts it back to 'scheduled'
+    // (an 'edit'). A raid can be complete only once it has a saved start that has passed, never straight from cancelled,
+    // and never with a reason; so a complete raid cannot be moved to a future start without undoing it first.
     // The start time, 24-hour HH:MM in Eastern Time. Raids made without one start at the guild's usual 9:00 PM ET.
     function validRaidTime(value) {
       return value is string && value.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$');
@@ -454,10 +457,12 @@ service cloud.firestore {
         && (!('description' in after) || validRaidDescription(after.description))
         && (!('time' in after) || validRaidTime(after.time))
         && (!('zones' in after) || validRaidZones(after.zones))
-        && after.get('status', 'scheduled') in ['scheduled', 'cancelled']
+        && after.get('status', 'scheduled') in ['scheduled', 'cancelled', 'complete']
         && (!('cancelReason' in after) || (after.cancelReason is string && after.cancelReason.size() <= 300))
         && (after.get('status', 'scheduled') != 'cancelled' || (after.get('cancelReason', null) is string && after.cancelReason.trim().size() >= 1))
-        && (after.get('status', 'scheduled') != 'scheduled' || !('cancelReason' in after));
+        && (after.get('status', 'scheduled') == 'cancelled' || !('cancelReason' in after))
+        && (after.get('status', 'scheduled') != 'complete'
+          || ('startsAt' in after && after.startsAt <= request.time && before.get('status', 'scheduled') != 'cancelled'));
     }
 
     // get() and getAfter() of a document that is not there are errors, and an error denies the request. So the
@@ -541,6 +546,7 @@ service cloud.firestore {
     // The item label is the item as it was before the change (as created, for a create).
     // The entry has to say exactly what happened to the target: the fields that differ between the document before
     // and after the batch (a created document has no "before", a deleted one no "after"), with their old and new values.
+    // A raid entry says 'complete' exactly when the batch marks the raid complete (RAID-019), as 'cancel' does for cancelling.
     function auditDescribesChange(data, oldDoc, newDoc) {
       let award = data.targetType == 'award';
       let raid = data.targetType == 'raid';
@@ -575,6 +581,7 @@ service cloud.firestore {
             && auditFieldLogged(data, oldDoc, newDoc, 'zones')
             && auditFieldLogged(data, oldDoc, newDoc, 'time')
             && auditFieldLogged(data, oldDoc, newDoc, 'startsAt')
+            && (data.action == 'complete') == (newDoc.get('status', 'scheduled') == 'complete' && oldDoc.get('status', 'scheduled') != 'complete')
           : award
             ? awardFieldsLogged(data, oldDoc, newDoc)
             : table
@@ -607,7 +614,7 @@ service cloud.firestore {
         && data.targetId is string && data.targetId.matches('^[A-Za-z0-9_-]{1,100}$')
         && data.rev is int && data.rev >= 1
         && entryId == data.targetType + '_' + data.targetId + '_' + string(data.rev)
-        && (data.targetType == 'raid' ? data.action in ['edit', 'cancel'] : data.targetType == 'phase' ? data.action in ['start', 'reopen'] : data.targetType == 'table' ? data.action in ['create', 'edit'] : data.action in ['create', 'edit', 'remove', 'reorder', 'delete'])
+        && (data.targetType == 'raid' ? data.action in ['edit', 'cancel', 'complete'] : data.targetType == 'phase' ? data.action in ['start', 'reopen', 'edit'] : data.targetType == 'table' ? data.action in ['create', 'edit'] : data.action in ['create', 'edit', 'remove', 'reorder', 'delete'])
         && (data.targetType != 'award' || data.action in ['create', 'edit', 'remove'])
         && data.item is string && data.item.size() <= 120
         && data.changed is list && data.changed.size() <= 20
@@ -627,15 +634,20 @@ service cloud.firestore {
               && auditDescribesChange(data, get(targetPath).data, getAfter(targetPath).data));
     }
 
-    // The entry for starting or reopening a loot phase (type 'phase', id phase_settings_{n}, n counting every start and reopen). The settings
-    // document is the target and its `phaseRev` is the revision. The entry lists exactly the phase fields (currentPhase, nextPhase, phaseHistory)
-    // that differ between what was stored and what the batch stores, with their old and new values; a first save has nothing stored, so those
-    // fields read as nothing before. Other settings changed in the same save (the status label, say) are not part of the entry.
+    // The entry for starting or reopening a loot phase, or for changing the phase start dates (type 'phase', id phase_settings_{n}, n counting
+    // every start, reopen and change of the dates). The settings document is the target and its `phaseRev` is the revision. The entry lists
+    // exactly the phase fields (currentPhase, nextPhase, phaseHistory, phaseStarts) that differ between what was stored and what the batch stores,
+    // with their old and new values; a first save has nothing stored, so those fields read as nothing before. Other settings changed in the same
+    // save (the status label, say) are not part of the entry. The action is 'start' exactly when the history grows, 'reopen' exactly when it
+    // shrinks, and 'edit' when it stays as it is (only the start dates can then have moved the revision, see validPhaseRev). Every change of the
+    // start dates needs this entry, so it is here that their order is checked (phaseStartsKeepOrder), within this entry's own budget.
     function validPhaseEntry(guildId, data) {
       let path = /databases/$(database)/documents/guilds/$(guildId)/settings/general;
       let oldDoc = exists(path) ? get(path).data : {};
       let newDoc = getAfter(path).data;
-      let touched = newDoc.diff(oldDoc).affectedKeys().intersection(['currentPhase', 'nextPhase', 'phaseHistory'].toSet());
+      let touched = newDoc.diff(oldDoc).affectedKeys().intersection(['currentPhase', 'nextPhase', 'phaseHistory', 'phaseStarts'].toSet());
+      let oldSize = oldDoc.get('phaseHistory', []).size();
+      let newSize = newDoc.get('phaseHistory', []).size();
       return data.targetId == 'settings'
         && data.rev == oldDoc.get('phaseRev', 0) + 1
         && newDoc.get('phaseRev', 0) == data.rev
@@ -647,7 +659,23 @@ service cloud.firestore {
         && auditFieldLogged(data, oldDoc, newDoc, 'currentPhase')
         && auditFieldLogged(data, oldDoc, newDoc, 'nextPhase')
         && auditFieldLogged(data, oldDoc, newDoc, 'phaseHistory')
-        && (data.action == 'start') == (newDoc.get('phaseHistory', []).size() > oldDoc.get('phaseHistory', []).size());
+        && auditFieldLogged(data, oldDoc, newDoc, 'phaseStarts')
+        && (data.action == 'start') == (newSize > oldSize)
+        && (data.action == 'reopen') == (newSize < oldSize)
+        && (!('phaseStarts' in touched) || phaseStartsKeepOrder(oldDoc.get('phaseStarts', []), newDoc.get('phaseStarts', [])));
+    }
+
+    // Whether the start dates a batch stores are in order, knowing the stored ones were (they passed these rules). Dates taken off the end (a
+    // reopen) keep the order, and one date added after the last (a start, with blanks for the phases between) keeps it when it is not before
+    // the last stored date, which is the latest (the list ends with a date). These two are checked cheaply, because the widest start and reopen
+    // entries have the least room in the 1000 expressions a write may evaluate; any other change (a date set or corrected) checks every pair.
+    // An empty range such as [0:0] is an error in the rules, so a prefix is compared only when it is not empty.
+    function phaseStartsKeepOrder(stored, starts) {
+      let o = stored.size();
+      let n = starts.size();
+      return (n < o && (n == 0 || stored[0:n] == starts))
+        || (n > o && (o == 0 || starts[0:o] == stored) && starts[o:n].removeAll(['']) == [starts[n - 1]] && (o == 0 || stored[o - 1] <= starts[n - 1]))
+        || phaseStartsInOrder(starts.removeAll(['']));
     }
 
     function validLabel(value) {
@@ -679,16 +707,48 @@ service cloud.firestore {
           : validPhaseSteps(resource.data, after));
     }
 
-    // Starting or reopening a phase (the history changes) is one more step of `phaseRev` and needs its change log entry in the same batch (see
-    // validPhaseEntry). A save that leaves the history alone, a rename of the current phase included, leaves `phaseRev` alone and needs none.
+    // Starting or reopening a phase (the history changes), and changing the phase start dates, are each one more step of `phaseRev` and need
+    // their change log entry in the same batch (see validPhaseEntry). A save that leaves the history and the dates alone, a rename of the current
+    // phase included, leaves `phaseRev` alone and needs none.
     function validPhaseRev(guildId) {
       let data = request.resource.data;
       let old = resource == null ? {} : resource.data;
       let rev = data.get('phaseRev', 0);
       return rev is int && rev >= 0 && rev <= 1000000
-        && (data.get('phaseHistory', []) != old.get('phaseHistory', [])
+        && (data.get('phaseHistory', []) != old.get('phaseHistory', []) || data.get('phaseStarts', []) != old.get('phaseStarts', [])
           ? rev == old.get('phaseRev', 0) + 1 && writtenNow(auditEntryPath(guildId, 'phase', 'settings', rev))
           : rev == old.get('phaseRev', 0));
+    }
+
+    // RAID-019: the day each loot phase started (`phaseStarts`, optional), one entry per phase in the order of their numbers (the finished phases,
+    // oldest first, then the current one), each an Eastern calendar date "YYYY-MM-DD", or '' for a phase whose start is not known. It has no more
+    // entries than there are phases, so reopening a phase takes its date away in the same save, and its last entry is a date (the list is never
+    // padded at the end). A change of the list is a step of `phaseRev` with its entry (validPhaseRev), and only a Guild Leader writes the settings.
+    // The rules cannot loop over a list, so the entries are checked joined into one text: every entry is text made of digits and hyphens only (so
+    // none holds a separator of its own), and each piece between the separators is a date or nothing. A list that did not change is not checked
+    // again, but its length is, because a reopen shortens the phases. That the dates never go backwards is checked by the entry the change needs
+    // (validPhaseEntry, phaseStartsInOrder): this document's own rules are close to the 1000 expressions one write may evaluate.
+    function validPhaseStarts() {
+      let data = request.resource.data;
+      let starts = data.get('phaseStarts', []);
+      return starts is list
+        && starts.size() <= data.get('phaseHistory', []).size() + 1
+        && (starts.size() == 0 || starts[starts.size() - 1] != '')
+        && ((resource != null && starts == resource.data.get('phaseStarts', []))
+          || (starts.join('').matches('^[0-9-]*$')
+            && starts.join('|').matches('^([0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01]))?([|]([0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01]))?)*$')));
+    }
+
+    // The dates of phaseStarts, blanks taken out, never go backwards (a later phase cannot start before an earlier one; two can start on the same
+    // day): each neighboring pair, written out for the 31 a list can have (30 finished phases and the current one). A date is "YYYY-MM-DD", so
+    // comparing the texts compares the days. The list is padded with 31 '~', which sorts after every date, so every pair can be compared without
+    // first asking whether it is there, which would cost about as much again (the padding is split from one text, which costs less than a list of
+    // 31 written out). tests/rules/settings.test.ts checks the widest writes.
+    function phaseStartsInOrder(dates) {
+      let d = dates.concat('~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~'.split(' '));
+      return d[0] <= d[1] && d[1] <= d[2] && d[2] <= d[3] && d[3] <= d[4] && d[4] <= d[5] && d[5] <= d[6] && d[6] <= d[7] && d[7] <= d[8] && d[8] <= d[9] && d[9] <= d[10]
+        && d[10] <= d[11] && d[11] <= d[12] && d[12] <= d[13] && d[13] <= d[14] && d[14] <= d[15] && d[15] <= d[16] && d[16] <= d[17] && d[17] <= d[18] && d[18] <= d[19] && d[19] <= d[20]
+        && d[20] <= d[21] && d[21] <= d[22] && d[22] <= d[23] && d[23] <= d[24] && d[24] <= d[25] && d[25] <= d[26] && d[26] <= d[27] && d[27] <= d[28] && d[28] <= d[29] && d[29] <= d[30];
     }
 
     // The colors of the zones (guilds/{id}/settings/zoneColors, a document of its own so that a save of the general settings from an older app cannot wipe
@@ -725,9 +785,10 @@ service cloud.firestore {
 
     function validGuildSettings(guildId) {
       let data = request.resource.data;
-      return data.keys().hasOnly(['currentPhase', 'nextPhase', 'currentStatusLabel', 'currentStatusTone', 'nextStatusLabel', 'nextStatusTone', 'councilStatus', 'teamNames', 'groupNames', 'phaseHistory', 'phaseRev'])
+      return data.keys().hasOnly(['currentPhase', 'nextPhase', 'currentStatusLabel', 'currentStatusTone', 'nextStatusLabel', 'nextStatusTone', 'councilStatus', 'teamNames', 'groupNames', 'phaseHistory', 'phaseRev', 'phaseStarts'])
         && validPhaseHistory()
         && validPhaseRev(guildId)
+        && validPhaseStarts()
         && data.keys().hasAll(['currentPhase', 'nextPhase', 'currentStatusLabel', 'currentStatusTone', 'nextStatusLabel', 'nextStatusTone', 'councilStatus', 'teamNames', 'groupNames'])
         && validLabel(data.currentPhase)
         && validLabel(data.nextPhase)

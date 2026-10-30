@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { formatRaidTime, isRaidCancelled, raidTimeOf, type RaidRecord } from '../../guildApi'
+import { CircleCheck, RotateCcw } from 'lucide-react'
+import { formatRaidTime, markRaidComplete, raidTimeOf, undoRaidComplete, type RaidRecord } from '../../guildApi'
 import { subscribeRaidSignups, type RaidSignup } from '../../raidSignups'
 import { effectiveRaidSignups } from '../../shared/raids/availability'
 import { RaidBanner } from '../../shared/raids/RaidBanner'
+import { markCompleteAction, raidCategory, raidCategoryLabel } from '../../shared/raids/raidCategory'
 import { RaidSignupModal } from '../../shared/raids/RaidSignupModal'
 import { ScheduledRaidRoster } from '../../shared/raids/ScheduledRaidRoster'
 import type { TabContext } from '../../shared/tabs/types'
@@ -14,10 +16,12 @@ const dateLabel = (date: string) => {
   return Number.isNaN(day.getTime()) ? date : day.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 }
 
-// What a closed raid says it is. A raid still to come shows no chip.
-function statusChip(raid: RaidRecord, closed: boolean) {
-  if (isRaidCancelled(raid)) return { label: 'Cancelled', tone: 'cancelled' }
-  return closed ? { label: 'Started', tone: 'closed' } : null
+// What a raid that is not still to come says it is: its category (RAID-019), In Progress, Complete (marked by a leader; complete by the 5 hours alone, a raid has left
+// the list) or Cancelled. A raid still to come shows no chip.
+function statusChip(raid: RaidRecord, now: number) {
+  const category = raidCategory(raid, now)
+  if (category === 'scheduled') return null
+  return { label: raidCategoryLabel[category], tone: category === 'in-progress' ? 'closed' : category }
 }
 
 /**
@@ -25,12 +29,14 @@ function statusChip(raid: RaidRecord, closed: boolean) {
  * starts no listener. Opening it mounts the panel that has always been here (the actions and the roster) for this raid only, so its sign-up and planning listeners run only
  * while it is open. A closed <details> still mounts its children, so the panel is rendered only when the row is open.
  */
-export function RaidRow({ raid, ctx, closed, open, onToggle }: { raid: RaidRecord; ctx: TabContext; closed: boolean; open: boolean; onToggle: (raidId: string, open: boolean) => void }) {
+export function RaidRow({ raid, ctx, now, closed, open, onToggle }: { raid: RaidRecord; ctx: TabContext; now: number; closed: boolean; open: boolean; onToggle: (raidId: string, open: boolean) => void }) {
   const [hideAlts, setHideAlts] = useState(false)
   const zones = raid.zones ?? []
   const sizes = [...new Set(zones.length ? zones.map((zone) => zone.size) : [raid.size])]
   const size = sizes.includes(ctx.shell.raidView) ? ctx.shell.raidView : sizes[0]
-  const chip = statusChip(raid, closed)
+  const chip = statusChip(raid, now)
+  // Mark Complete for Guild and Raid Leaders (hidden in a VIEW AS preview of a Member; the rules decide who may write).
+  const completeAction = ctx.identity.canEditRaidData ? markCompleteAction(raid, now) : null
   return <details className="raid-row" id={raidRowId(raid.id)} open={open} onToggle={(event) => { if (event.target === event.currentTarget) onToggle(raid.id, event.currentTarget.open) }}>
     <summary className="raid-row-summary">
       <span className="raid-row-art"><RaidBanner zones={zones} zoneArt={ctx.data.zoneArt} zoneColors={ctx.data.zoneColors} /></span>
@@ -49,10 +55,33 @@ export function RaidRow({ raid, ctx, closed, open, onToggle }: { raid: RaidRecor
             <button type="button" className={hideAlts ? 'segment selected' : 'segment'} aria-pressed={hideAlts} onClick={() => setHideAlts(true)}>Hide alts</button>
           </div>
         </div>
+        {completeAction && <MarkCompleteButton raid={raid} ctx={ctx} action={completeAction} />}
       </div>
       <RaidRoster raid={raid} ctx={ctx} closed={closed} hideAlts={hideAlts} />
     </div>}
   </details>
+}
+
+// Marks a started raid complete, or undoes that, as one audited change (the row's chip then says Complete, or In Progress again).
+function MarkCompleteButton({ raid, ctx, action }: { raid: RaidRecord; ctx: TabContext; action: 'mark' | 'undo' }) {
+  const { busy, setBusy, setMutationError, setNotice } = ctx.feedback
+  const run = async () => {
+    setBusy(true)
+    try {
+      const who = { uid: ctx.identity.uid, displayName: ctx.identity.displayName }
+      if (action === 'mark') await markRaidComplete(raid, who)
+      else await undoRaidComplete(raid, who)
+      setMutationError('')
+      setNotice(action === 'mark' ? `${raid.name} is marked complete.` : `${raid.name} is no longer marked complete.`)
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : action === 'mark' ? 'Could not mark the raid complete.' : 'Could not undo Mark complete.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return action === 'mark'
+    ? <button type="button" className="button button-secondary raid-row-complete" disabled={busy} onClick={() => void run()}><CircleCheck size={15} /> Mark complete</button>
+    : <button type="button" className="button button-secondary raid-row-complete" disabled={busy} title="Put this raid back to In Progress" onClick={() => void run()}><RotateCcw size={15} /> Undo complete</button>
 }
 
 function RaidRoster({ raid, ctx, closed, hideAlts }: { raid: RaidRecord; ctx: TabContext; closed: boolean; hideAlts: boolean }) {

@@ -354,6 +354,83 @@ describe('automatic immutable raid start snapshots', () => {
     assert.equal(manifest.scheduledStartAt.toMillis(), start.toMillis())
   })
 
+  // RAID-019: Mark Complete sets status 'complete' once the raid has started. The raid was held, so its start snapshot must still be captured.
+  test('a raid marked complete after its start is still captured by the daily sweep', async () => {
+    await raid.update({ status: 'complete', rev: 1 })
+    await addRaidAudit({
+      at: Timestamp.fromMillis(start.toMillis() + 60_000), changed: ['status'], before: { status: null }, after: { status: 'complete' }, action: 'complete',
+    })
+    assert.equal((await startSweep()).captured, 1)
+    const manifest = (await raid.collection('snapshots').doc('start').get()).data()
+    assert.equal(manifest.status, 'complete')
+    assert.equal(manifest.scheduledStartAt.toMillis(), start.toMillis())
+    assert.equal(manifest.raid.name, 'Invented Raid')
+    assert.equal((await guild.collection('raidSnapshotJobs').doc(raid.id).get()).data().state, 'complete')
+  })
+
+  test('a raid marked complete exactly at its start is still captured', async () => {
+    await raid.update({ status: 'complete', rev: 1 })
+    await addRaidAudit({ at: start, changed: ['status'], before: { status: null }, after: { status: 'complete' }, action: 'complete' })
+    assert.equal((await startSweep()).captured, 1)
+    assert.equal((await raid.collection('snapshots').doc('start').get()).data().scheduledStartAt.toMillis(), start.toMillis())
+  })
+
+  test('a raid recorded as complete with no audit history (written outside the app) is still captured', async () => {
+    await raid.update({ status: 'complete' })
+    assert.equal(await captureRaidStartSnapshot(db, guild, raid, raid.id, now), 'captured')
+    assert.equal((await raid.collection('snapshots').doc('start').get()).data().status, 'complete')
+  })
+
+  test('a raid marked complete and then undone is captured once', async () => {
+    await raid.update({ status: 'scheduled', rev: 2 })
+    await addRaidAudit({ rev: 1, at: Timestamp.fromMillis(start.toMillis() + 30_000), changed: ['status'], before: { status: null }, after: { status: 'complete' }, action: 'complete' })
+    await addRaidAudit({ rev: 2, at: Timestamp.fromMillis(start.toMillis() + 90_000), changed: ['status'], before: { status: 'complete' }, after: { status: 'scheduled' } })
+    assert.equal((await startSweep()).captured, 1)
+    assert.equal((await startSweep(nextSnapshotExecution(now))).captured, 0)
+    assert.equal((await raid.collection('snapshots').doc('start').get()).data().scheduledStartAt.toMillis(), start.toMillis())
+  })
+
+  test('a raid marked complete between a transient failure and its retry is captured by the retry', async () => {
+    let failOnce = true
+    const flakyDb = new Proxy(db, {
+      get(target, property) {
+        if (property === 'runTransaction') {
+          return (handler, options) => target.runTransaction((transaction) => handler(new Proxy(transaction, {
+            get(inner, key) {
+              if (key === 'get') return async (ref) => {
+                if (failOnce && ref.path === raid.path) {
+                  failOnce = false
+                  throw new Error('Injected transient raid read failure.')
+                }
+                return transaction.get(ref)
+              }
+              const value = Reflect.get(inner, key, inner)
+              return typeof value === 'function' ? value.bind(inner) : value
+            },
+          })), options)
+        }
+        const value = Reflect.get(target, property, target)
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    })
+    const first = await runRaidStartSnapshotSweep(flakyDb, now)
+    assert.equal(first.retry, 1)
+    assert.equal((await guild.collection('raidSnapshotJobs').doc(raid.id).get()).data().state, 'pending')
+    assert.equal((await raid.collection('snapshots').doc('start').get()).exists, false)
+
+    // A leader marks it complete after the failed attempt and before the next day's run.
+    await raid.update({ status: 'complete', rev: 1 })
+    await addRaidAudit({
+      at: Timestamp.fromMillis(now.toMillis() + 60_000), changed: ['status'], before: { status: null }, after: { status: 'complete' }, action: 'complete',
+    })
+    const retry = await runRaidStartSnapshotSweep(flakyDb, nextSnapshotExecution(now))
+    assert.equal(retry.captured, 1)
+    const manifest = (await raid.collection('snapshots').doc('start').get()).data()
+    assert.equal(manifest.status, 'complete')
+    assert.equal(manifest.scheduledStartAt.toMillis(), start.toMillis())
+    assert.equal((await guild.collection('raidSnapshotJobs').doc(raid.id).get()).data().state, 'complete')
+  })
+
   test('a post-start reschedule is recovered from raid audit history', async () => {
     const nextStart = Timestamp.fromMillis(start.toMillis() + 24 * 60 * 60 * 1000)
     await raid.update({ startsAt: nextStart, date: '2026-10-21', rev: 1 })

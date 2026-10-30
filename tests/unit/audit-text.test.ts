@@ -42,6 +42,31 @@ describe('describeEntry for a phase', () => {
   it('still reads an entry with nothing in it', () => {
     assert.equal(phase({ action: 'start', after: {} }).title, 'Started \u201cSecond\u201d')
   })
+  // RAID-019: the start dates, one line per phase whose date changed.
+  it('says which phase got a start date, and which date changed or went', () => {
+    const set = phase({ action: 'edit', changed: ['phaseStarts'], before: { phaseStarts: null }, after: { phaseStarts: ['', '2026-08-30'] } })
+    assert.equal(set.title, 'Set the start date of \u201cSecond\u201d')
+    assert.deepEqual(set.details, ['Start of \u201cSecond\u201d: (none) \u2192 Aug 30, 2026'])
+    const moved = phase({ action: 'edit', changed: ['phaseStarts'], before: { phaseStarts: ['', '2026-08-30'] }, after: { phaseStarts: ['', '2026-08-31'] } })
+    assert.equal(moved.title, 'Changed the start date of \u201cSecond\u201d')
+    assert.deepEqual(moved.details, ['Start of \u201cSecond\u201d: Aug 30, 2026 \u2192 Aug 31, 2026'])
+    const gone = phase({ action: 'edit', changed: ['phaseStarts'], before: { phaseStarts: ['2026-06-01', '2026-08-30'] }, after: { phaseStarts: ['2026-06-01'] } })
+    assert.equal(gone.title, 'Removed the start date of \u201cSecond\u201d')
+    assert.deepEqual(gone.details, ['Start of \u201cSecond\u201d: Aug 30, 2026 \u2192 (none)'])
+  })
+  it('lists every date a change moved when it moved more than one', () => {
+    const { title, details } = phase({ action: 'edit', changed: ['phaseStarts'], before: { phaseStarts: null }, after: { phaseStarts: ['2026-06-01', '', '2026-10-09'] } })
+    assert.equal(title, 'Changed the start dates of the loot phases')
+    assert.deepEqual(details, ['Start of \u201cLaunch\u201d: (none) \u2192 Jun 1, 2026', 'Start of \u201cPhase 2\u201d: (none) \u2192 Oct 9, 2026'])
+  })
+  it('gives the start date a start records, and the one a reopen takes away, after the other changes', () => {
+    const started = phase({ action: 'start', changed: ['currentPhase', 'phaseHistory', 'phaseStarts'], before: { currentPhase: 'Launch', phaseHistory: null, phaseStarts: null }, after: { currentPhase: 'Second', phaseHistory: ['Launch'], phaseStarts: ['', '2026-10-29'] } })
+    assert.equal(started.title, 'Started \u201cSecond\u201d')
+    assert.deepEqual(started.details, ['\u201cLaunch\u201d is closed and read-only', 'Current phase: Launch \u2192 Second', 'Finished phases: (none) \u2192 Launch', 'Start of \u201cSecond\u201d: (none) \u2192 Oct 29, 2026'])
+    const reopened = phase({ action: 'reopen', item: 'Launch', changed: ['currentPhase', 'phaseHistory', 'phaseStarts'], before: { currentPhase: 'Second', phaseHistory: ['Launch'], phaseStarts: ['', '2026-10-29'] }, after: { currentPhase: 'Launch', phaseHistory: null, phaseStarts: null } })
+    assert.equal(reopened.details.at(-1), 'Start of \u201cSecond\u201d: Oct 29, 2026 \u2192 (none)')
+    assert.equal(reopened.details.some((line) => line.startsWith('Start dates:')), false)
+  })
 })
 
 describe('describeEntry', () => {

@@ -1,11 +1,12 @@
 import { readLines } from '../../shared/game/candidates.ts'
 import { encounterLabel } from '../../shared/game/encounter.ts'
 import type { AuditEntry } from '../../shared/game/lootAudit.ts'
+import { phaseDateLabel } from '../../shared/game/phases.ts'
 
 // The Log in words: one line for what happened, then what changed. Pure, so Node tests it; the dialog only lays it out.
 
 const fieldLabels: Record<string, string> = {
-  currentPhase: 'Current phase', nextPhase: 'Next phase', phaseHistory: 'Finished phases',
+  currentPhase: 'Current phase', nextPhase: 'Next phase', phaseHistory: 'Finished phases', phaseStarts: 'Start dates',
   item: 'Item', encounter: 'Dungeon and boss', rankedPlayers: 'Candidates', councilNote: 'Council note', itemId: 'Item id', zoneId: 'Dungeon id',
   npcId: 'Creature id', phaseNo: 'Phase', carriedFrom: 'Carried over from', priorityId: 'Priority', recipient: 'Recipient', recipientId: 'Recipient id',
   rankedIds: 'Candidate lines', prioritySnapshotIds: 'Candidate lines at the time',
@@ -59,6 +60,23 @@ function idsOnly(entry: AuditEntry): string | undefined {
   return 'Changed the candidate lines'
 }
 const quote = (item: string) => `\u201c${item || 'Untitled'}\u201d`
+
+// The start dates of a phase entry (RAID-019), one line per phase whose date changed, named by its number as the guild names it now:
+// "Start of \u201cSecond\u201d: Aug 30, 2026 \u2192 Aug 31, 2026". A list holds one date per phase, '' for a phase with none.
+function startDateLines(entry: AuditEntry, phaseName: (no: number) => string): { no: number; was: string; is: string; line: string }[] {
+  if (!entry.changed.includes('phaseStarts')) return []
+  const dates = (values: Record<string, unknown>) => (Array.isArray(values.phaseStarts) ? values.phaseStarts.map((value) => (typeof value === 'string' ? value : '')) : [])
+  const before = dates(entry.before)
+  const after = dates(entry.after)
+  const words = (date: string) => (date ? phaseDateLabel(date) : '(none)')
+  const lines: { no: number; was: string; is: string; line: string }[] = []
+  for (let no = 0; no < Math.max(before.length, after.length); no += 1) {
+    const was = before[no] ?? ''
+    const is = after[no] ?? ''
+    if (was !== is) lines.push({ no, was, is, line: `Start of ${quote(phaseName(no))}: ${words(was)} \u2192 ${words(is)}` })
+  }
+  return lines
+}
 
 export type EntryText = { title: string; details: string[] }
 // What the Log can look up for a drop list entry: the name of a zone by its number, of a creature by its zone and key (an entry about a document that
@@ -169,13 +187,22 @@ export function describeEntry(entry: AuditEntry, phaseName: (no: number) => stri
     }
   }
   if (entry.targetType === 'phase') {
-    // A phase was started or reopened: the history gained or lost its last name, and the current phase changed.
+    // A phase was started or reopened: the history gained or lost its last name, and the current phase changed. Or (an edit, RAID-019) the start
+    // dates were set or corrected. The dates read as one line per phase, after the other fields.
     const history = (values: Record<string, unknown>) => (Array.isArray(values.phaseHistory) ? values.phaseHistory.map(String) : [])
     const now = typeof entry.after.currentPhase === 'string' ? entry.after.currentPhase : entry.item
     const closed = history(entry.after).at(-1)
     const left = typeof entry.before.currentPhase === 'string' ? entry.before.currentPhase : ''
-    if (entry.action === 'reopen') return { title: `Reopened ${quote(now)}`, details: [left ? `${quote(left)} is the next phase again` : 'The phase being left is the next phase again', ...entry.changed.map(change)] }
-    return { title: `Started ${quote(now)}`, details: [closed ? `${quote(closed)} is closed and read-only` : 'The previous phase is closed and read-only', ...entry.changed.map(change)] }
+    const dates = startDateLines(entry, phaseName)
+    const others = entry.changed.filter((field) => field !== 'phaseStarts').map(change)
+    if (entry.action === 'edit') {
+      const only = dates.length === 1 ? dates[0] : undefined
+      const title = !only ? 'Changed the start dates of the loot phases'
+        : `${!only.was ? 'Set' : !only.is ? 'Removed' : 'Changed'} the start date of ${quote(phaseName(only.no))}`
+      return { title, details: [...dates.map((date) => date.line), ...others] }
+    }
+    if (entry.action === 'reopen') return { title: `Reopened ${quote(now)}`, details: [left ? `${quote(left)} is the next phase again` : 'The phase being left is the next phase again', ...others, ...dates.map((date) => date.line)] }
+    return { title: `Started ${quote(now)}`, details: [closed ? `${quote(closed)} is closed and read-only` : 'The previous phase is closed and read-only', ...others, ...dates.map((date) => date.line)] }
   }
   if (entry.targetType === 'priority') {
     switch (entry.action) {
