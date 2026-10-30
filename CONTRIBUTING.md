@@ -61,6 +61,10 @@ Use an invented Member account to add a range, then use the pencil beside it in 
 
 Move, shrink and expand a range across future raids, including another overlapping unavailable entry. Previously covered raids retain Absent; newly covered raids become Absent and lose that account's main/alt scheduled placements. Once no unavailable entry overlaps, the member may explicitly change their response; old placements are never restored. Started/cancelled raids and published snapshots remain unchanged. Server tests cover authorization, ranges, concurrency and transactional rollback. Deploy the `updateUnavailableDates` Function before Hosting after explicit release approval; existing add/remove clients remain compatible. No data migration is required.
 
+### Fixing a recent award (LOOT-014)
+
+In the local emulator, give the current phase more than 30 invented awards (most from **Record loot**, some from a priority list, one removed with a reason, one corrected) and put one in a finished phase. As a Guild Leader and as a Raid Leader, **Recent awards** beside Record loot opens **Recently recorded** with the current phase's awards only: newest raid night first, then the latest entered, 30 rows and then **Show 30 more**. The removed award is struck through, with its reason and no Fix. Fix a Record loot award: the choice is the roster; move it, then remove another with a reason, and check that each award and its Log entry match what the x on a priority line writes. The x on an unlocked priority line still opens the same dialog, with the people on the list first. As a Member, as a Guild Leader in VIEW AS Member, and while looking at a finished phase, there is no Recent awards button. Check light and dark, and a 375px window: the heading buttons wrap and the rows fit without sideways scrolling.
+
 ```bash
 npm run build
 npm run lint

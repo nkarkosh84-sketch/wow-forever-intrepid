@@ -1,0 +1,33 @@
+/* Recently recorded (RecentAwardsModal, LOOT-014): the awards of the current phase, one row each, with a Fix button. Laid out like the Log's list. */
+.modal:has(.recent-awards) { width: min(100%, 640px); }
+.recent-awards { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--dialog-gap); padding-top: var(--dialog-top); }
+.recent-intro { margin: 0; color: #526158; font-size: 11px; line-height: 1.45; }
+.recent-list { margin: 0; padding: 0; list-style: none; border: 1px solid #e3e8e0; border-radius: var(--card-radius); overflow: hidden; }
+.recent-award { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 8px 6px 10px; border-bottom: 1px solid #edf0eb; border-left: 3px solid #c9a24b; background: #fff; }
+.recent-award:last-child { border-bottom: 0; }
+.recent-award-text { display: grid; flex: 1 1 auto; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.recent-award-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 7px; font-size: 11.5px; line-height: 1.4; }
+.recent-award-line strong { color: #29372f; font-weight: 700; }
+.recent-award-to { color: #3e5368; }
+.recent-award-facts { color: #626e7b; font-size: 10px; line-height: 1.4; }
+.recent-tag { align-self: center; padding: 0 6px; border-radius: 9px; color: #4a6075; background: #eef3f8; font-size: 8.5px; font-weight: 700; letter-spacing: .04em; line-height: 15px; text-transform: uppercase; }
+.recent-tag-removed { color: #8a3b2c; background: #fbeeea; }
+.recent-award-reason { color: #8a3b2c; font-size: 10px; line-height: 1.4; }
+.recent-fix { flex: none; min-height: 28px; gap: 5px; padding: 0 10px; }
+/* A removed award stays in the list with its item struck through and its reason: it is no longer anyone's, and it has no Fix. Its text keeps its full color (fading it
+   dropped the details below 3:1). */
+.recent-award.recent-removed { border-left-color: #c9b9b4; background: #fafaf9; }
+.recent-award.recent-removed .recent-award-line strong { text-decoration: line-through; text-decoration-thickness: 1px; }
+.recent-empty { margin: 0; padding: 14px 0; color: #626e7b; font-size: 11px; text-align: center; }
+.recent-count { margin: 0; color: #626e7b; font-size: 10px; text-align: center; }
+.recent-more { justify-self: center; }
+:root[data-theme='dark'] .recent-intro { color: #bfccd9; }
+:root[data-theme='dark'] .recent-list { border-color: #33465c; }
+:root[data-theme='dark'] .recent-award { border-bottom-color: #2a3b4f; border-left-color: #c9a24b; background: #182536; }
+:root[data-theme='dark'] .recent-award-line strong { color: #e8edf3; }
+:root[data-theme='dark'] .recent-award-to { color: #c8d5e3; }
+:root[data-theme='dark'] .recent-award-facts, :root[data-theme='dark'] .recent-empty, :root[data-theme='dark'] .recent-count { color: #9fb0c3; }
+:root[data-theme='dark'] .recent-tag { color: #bfccd9; background: #243448; }
+:root[data-theme='dark'] .recent-tag-removed { color: #f0a090; background: #3a2422; }
+:root[data-theme='dark'] .recent-award-reason { color: #f0a090; }
+:root[data-theme='dark'] .recent-award.recent-removed { border-left-color: #5a4a46; background: #162130; }
