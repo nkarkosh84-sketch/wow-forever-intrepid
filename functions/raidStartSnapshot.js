@@ -431,7 +431,24 @@ async function markJob(db, ref, state, now, detail) {
   await ref.set(update, { merge: true })
 }
 
-async function recordFailure(db, guildRef, raidRef, raidId, scheduledStartAt, error, workRef) {
+// RAID-015: a capture that fails before it wrote anything would leave members nothing to see, so it also writes this small failed record at the snapshot's own path:
+// the raid's name and date as they were at the start, the scheduled start, the failure code and when it failed. Never `detail`, which stays in the server-only failure
+// record because it can contain ids. It has no child records and `failureNotice` marks it, so a later retry (RAID-014) can tell it from a capture that failed after
+// writing records and remove it before capturing again: the capture creates its manifest with create() and never overwrites one.
+function failureNotice(raidId, raidVersion, scheduledStartAt, code) {
+  return {
+    schemaVersion: 1,
+    status: 'failed',
+    failureNotice: true,
+    raidId,
+    raid: { id: raidId, name: stringOrNull(raidVersion.name), date: stringOrNull(raidVersion.date) },
+    scheduledStartAt,
+    failureCode: code,
+    failedAt: FieldValue.serverTimestamp(),
+  }
+}
+
+async function recordFailure(db, guildRef, raidRef, raidId, scheduledStartAt, error, workRef, raidVersion) {
   const failureKey = scheduledStartAt instanceof Timestamp ? scheduledStartAt.toMillis() : 'audit-history'
   const ref = failureRef(guildRef, raidId, failureKey)
   const detail = error.message.slice(0, 500)
@@ -455,6 +472,10 @@ async function recordFailure(db, guildRef, raidRef, raidId, scheduledStartAt, er
       && manifest.data().scheduledStartAt?.isEqual(scheduledStartAt)) {
       tx.update(snapshotRef(raidRef), { status: 'failed', failureCode: error.code ?? 'snapshot-capture-failed', failedAt: FieldValue.serverTimestamp() })
     }
+    // Only for a raid that still exists and has a scheduled start: a legacy raid with none could never be captured, so it is not shown as failed.
+    if (!manifest.exists && scheduledStartAt instanceof Timestamp && raidVersion) {
+      tx.create(snapshotRef(raidRef), failureNotice(raidId, raidVersion, scheduledStartAt, error.code ?? 'snapshot-capture-failed'))
+    }
   })
   logger.error('Raid start snapshot capture failed permanently.', {
     guildId: guildRef.id,
@@ -465,7 +486,8 @@ async function recordFailure(db, guildRef, raidRef, raidId, scheduledStartAt, er
   })
 }
 
-async function prepareCapture(db, guildRef, raidRef, raidId, now) {
+// `attempt.raidVersion` keeps the raid as the capture last saw it (the version due at the start once that is known), for the failed record of RAID-015.
+async function prepareCapture(db, guildRef, raidRef, raidId, now, attempt) {
   return db.runTransaction(async (tx) => {
     const manifest = await tx.get(snapshotRef(raidRef))
     if (manifest.exists && manifest.data().status === 'complete') return { status: 'complete' }
@@ -473,9 +495,11 @@ async function prepareCapture(db, guildRef, raidRef, raidId, now) {
     const [raidDoc, planDoc] = await Promise.all([tx.get(raidRef), tx.get(raidRef.collection('planning').doc('working'))])
     if (!raidDoc.exists) throw new PermanentAuditError('Raid referenced by the snapshot work record no longer exists.')
     const raid = raidDoc.data()
+    attempt.raidVersion = raid
     const audits = await raidAudits(tx, guildRef, raidId, raid)
     const due = dueRaidVersion(raid, audits, now)
     if (!due) return { status: 'not-due' }
+    attempt.raidVersion = due.version
     const scheduledStartAt = due.scheduledStartAt
     const failure = await tx.get(failureRef(guildRef, raidId, scheduledStartAt.toMillis()))
     if (failure.exists) return { status: 'terminal-failure' }
@@ -520,8 +544,9 @@ async function prepareCapture(db, guildRef, raidRef, raidId, now) {
 
 export async function captureRaidStartSnapshot(db, guildRef, raidRef, raidId, now = Timestamp.now(), workRef) {
   let scheduledStartAt
+  const attempt = {}
   try {
-    const prepared = await prepareCapture(db, guildRef, raidRef, raidId, now)
+    const prepared = await prepareCapture(db, guildRef, raidRef, raidId, now, attempt)
     if (['complete', 'terminal-failure', 'missing-raid', 'not-due'].includes(prepared.status)) return prepared.status === 'terminal-failure' ? 'skipped' : prepared.status
     scheduledStartAt = prepared.source?.scheduledStartAt
       ?? prepared.manifest?.scheduledStartAt
@@ -545,7 +570,7 @@ export async function captureRaidStartSnapshot(db, guildRef, raidRef, raidId, no
   } catch (error) {
     if (error instanceof PermanentCaptureError || error instanceof PermanentAuditError) {
       const start = error.scheduledStartAt ?? scheduledStartAt
-      await recordFailure(db, guildRef, raidRef, raidId, start, error, workRef)
+      await recordFailure(db, guildRef, raidRef, raidId, start, error, workRef, attempt.raidVersion)
       return 'failed'
     }
     logger.error('Raid start snapshot capture will be retried by a later sweep.', {

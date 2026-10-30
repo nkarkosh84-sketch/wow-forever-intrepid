@@ -934,26 +934,34 @@ service cloud.firestore {
           allow write: if false;
         }
 
+        // A starting snapshot (written by functions/raidStartSnapshot.js only) is readable while it is being captured, once it is complete and after it
+        // failed (RAID-015), so Raid History can show a started or failed capture, marked as incomplete, instead of hiding it. A failure before anything
+        // was written leaves a small failed record here with no children. A list must ask for these statuses (`status in [...]`), or the rules refuse it.
+        // A child record is readable whenever its manifest is: it is create-only, so a partial capture is an unfinished copy of the final one.
+        function readableSnapshotStatus(status) {
+          return status in ['capturing', 'complete', 'failed'];
+        }
+
         match /snapshots/{snapshotId} {
           allow read: if hasGuildRole(guildId, ['Guild Leader', 'Raid Leader', 'Member'])
-            && resource.data.status == 'complete';
+            && readableSnapshotStatus(resource.data.status);
           allow write: if false;
 
           match /lineups/{lineupId} {
             allow read: if hasGuildRole(guildId, ['Guild Leader', 'Raid Leader', 'Member'])
-              && get(/databases/$(database)/documents/guilds/$(guildId)/raids/$(raidId)/snapshots/$(snapshotId)).data.status == 'complete';
+              && readableSnapshotStatus(get(/databases/$(database)/documents/guilds/$(guildId)/raids/$(raidId)/snapshots/$(snapshotId)).data.status);
             allow write: if false;
           }
 
           match /characters/{characterId} {
             allow read: if hasGuildRole(guildId, ['Guild Leader', 'Raid Leader', 'Member'])
-              && get(/databases/$(database)/documents/guilds/$(guildId)/raids/$(raidId)/snapshots/$(snapshotId)).data.status == 'complete';
+              && readableSnapshotStatus(get(/databases/$(database)/documents/guilds/$(guildId)/raids/$(raidId)/snapshots/$(snapshotId)).data.status);
             allow write: if false;
           }
 
           match /accounts/{uid} {
             allow read: if hasGuildRole(guildId, ['Guild Leader', 'Raid Leader', 'Member'])
-              && get(/databases/$(database)/documents/guilds/$(guildId)/raids/$(raidId)/snapshots/$(snapshotId)).data.status == 'complete';
+              && readableSnapshotStatus(get(/databases/$(database)/documents/guilds/$(guildId)/raids/$(raidId)/snapshots/$(snapshotId)).data.status);
             allow write: if false;
           }
         }

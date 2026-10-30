@@ -49,3 +49,24 @@
   .raid-history-detail-heading { flex-direction: column; }
   .raid-history-read-only { align-self: start; }
 }
+/* RAID-015: each starting snapshot's status, and the banner over one that is in progress or failed. At the end of the file, after the media queries, because
+   nothing above needs to change for it. */
+.raid-history-status { justify-self: start; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 700; line-height: 1.4; }
+.raid-history-status-complete { color: #22603a; background: #e4f3e8; }
+.raid-history-status-capturing { color: #6e4500; background: #fdf0d5; }
+.raid-history-status-failed { color: #a1281f; background: #fff0ee; }
+.raid-history-banner { display: grid; gap: 4px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid; border-left-width: 4px; border-radius: var(--card-radius); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.raid-history-banner strong { font-size: 12px; }
+.raid-history-banner p { margin: 0; }
+.raid-history-banner-capturing { color: #573800; border-color: #ecc77d; border-left-color: #b7791f; background: #fdf3dc; }
+.raid-history-banner-failed { color: #85231b; border-color: #efb5ac; border-left-color: #c4473b; background: #fff0ee; }
+.raid-history-failure-code { display: inline-block; margin-left: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+.raid-history-gap { margin: 0 0 8px; color: #425148; font-size: 11px; line-height: 1.5; }
+.raid-history-not-written { margin: 6px 0 0; color: #6e4500; font-size: 11px; line-height: 1.5; }
+:root[data-theme='dark'] .raid-history-status-complete { color: #b6e6c4; background: #1f4030; }
+:root[data-theme='dark'] .raid-history-status-capturing { color: #ffd69a; background: #46361a; }
+:root[data-theme='dark'] .raid-history-status-failed { color: #ffb4ab; background: #542222; }
+:root[data-theme='dark'] .raid-history-banner-capturing { color: #ffe2b0; border-color: #6b5326; border-left-color: #d9a441; background: #3a2e15; }
+:root[data-theme='dark'] .raid-history-banner-failed { color: #ffd0c9; border-color: #6b3530; border-left-color: #e0675c; background: #3d2020; }
+:root[data-theme='dark'] .raid-history-gap { color: #bfccd9; }
+:root[data-theme='dark'] .raid-history-not-written { color: #ffd69a; }

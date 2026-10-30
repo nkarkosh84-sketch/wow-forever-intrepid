@@ -78,6 +78,20 @@ async function startSweep(at = now) {
   return runRaidStartSnapshotSweep(db, at)
 }
 
+// RAID-015: a capture that fails before writing anything leaves this small failed record at the snapshot's path, for members to see.
+async function assertFailedRecord(code, { name = 'Invented Raid', date = '2026-10-20', startsAt = start } = {}) {
+  const record = raid.collection('snapshots').doc('start')
+  const data = (await record.get()).data()
+  assert.ok(data, 'the failed record exists')
+  assert.ok(data.failedAt instanceof Timestamp)
+  assert.equal(data.scheduledStartAt.toMillis(), startsAt.toMillis())
+  assert.deepEqual({ ...data, failedAt: null, scheduledStartAt: null }, {
+    schemaVersion: 1, status: 'failed', failureNotice: true, raidId: raid.id,
+    raid: { id: raid.id, name, date }, scheduledStartAt: null, failureCode: code, failedAt: null,
+  })
+  assert.deepEqual((await record.listCollections()).map((child) => child.id), [])
+}
+
 beforeEach(async () => {
   await db.collection('system').doc('raidStartSnapshotSweep').set({ coveredThrough: previousBoundary })
   guild = db.collection('guilds').doc(`snapshot-test-${randomUUID()}`)
@@ -114,7 +128,7 @@ describe('automatic immutable raid start snapshots', () => {
     test(`rejects invalid explicit raid time ${JSON.stringify(time)}`, async () => {
       await raid.update({ time })
       assert.equal(await captureRaidStartSnapshot(db, guild, raid, raid.id, now), 'failed')
-      assert.notEqual((await raid.collection('snapshots').doc('start').get()).data()?.status, 'complete')
+      await assertFailedRecord('invalid-raid-details')
       const failures = await guild.collection('raidSnapshotFailures').get()
       assert.equal(failures.size, 1)
       assert.equal(failures.docs[0].data().code, 'invalid-raid-details')
@@ -378,7 +392,7 @@ describe('automatic immutable raid start snapshots', () => {
     })
     await raid.collection('signups').doc('member-uid').update({ status: 'accept', updatedAt: Timestamp.fromMillis(start.toMillis() + 600) })
     assert.equal((await startSweep()).failed, 1)
-    assert.equal((await raid.collection('snapshots').doc('start').get()).exists, false)
+    await assertFailedRecord('signup-changed-after-start') // the date at the start, not the later one
     assert.equal((await guild.collection('raidSnapshotFailures').get()).size, 1)
   })
 
@@ -392,7 +406,7 @@ describe('automatic immutable raid start snapshots', () => {
     })
     await raid.collection('planning').doc('working').update({ revision: 2, updatedAt: Timestamp.fromMillis(start.toMillis() + 600) })
     assert.equal((await startSweep()).failed, 1)
-    assert.equal((await raid.collection('snapshots').doc('start').get()).exists, false)
+    await assertFailedRecord('working-roster-changed-after-start')
     assert.equal((await guild.collection('raidSnapshotFailures').get()).size, 1)
   })
 
@@ -411,7 +425,7 @@ describe('automatic immutable raid start snapshots', () => {
   test('a missing working roster records one terminal failure and publishes no snapshot', async () => {
     await raid.collection('planning').doc('working').delete()
     assert.equal((await startSweep()).failed, 1)
-    assert.equal((await raid.collection('snapshots').doc('start').get()).exists, false)
+    await assertFailedRecord('missing-working-roster')
     assert.equal((await guild.collection('raidSnapshotFailures').get()).size, 1)
     assert.equal((await startSweep()).failed, 0)
     assert.equal((await guild.collection('raidSnapshotFailures').get()).size, 1)
@@ -421,7 +435,7 @@ describe('automatic immutable raid start snapshots', () => {
     await raid.update({ rev: 1 })
     const first = await startSweep()
     assert.equal(first.failed, 1)
-    assert.equal((await raid.collection('snapshots').doc('start').get()).exists, false)
+    await assertFailedRecord('invalid-raid-audit-history')
     assert.equal((await guild.collection('raidSnapshotFailures').get()).size, 1)
     assert.equal((await guild.collection('raidSnapshotJobs').doc(raid.id).get()).data().state, 'failed')
     assert.equal((await startSweep()).failed, 0)
@@ -437,5 +451,63 @@ describe('automatic immutable raid start snapshots', () => {
     await root.collection('characters').doc('main').set({ id: 'main', name: 'Wrong Snapshot' })
     assert.equal(await captureRaidStartSnapshot(db, guild, raid, raid.id, now), 'failed')
     assert.notEqual((await root.get()).data().status, 'complete')
+  })
+
+  // RAID-015: what members can see of a failed capture.
+  test('a failure before any record leaves one small failed record, without the server detail, that later runs keep', async () => {
+    await raid.collection('planning').doc('working').delete()
+    assert.equal((await startSweep()).failed, 1)
+    await assertFailedRecord('missing-working-roster')
+    const record = raid.collection('snapshots').doc('start')
+    const written = (await record.get()).data()
+    assert.equal('detail' in written, false)
+    const [failure] = (await guild.collection('raidSnapshotFailures').get()).docs
+    assert.equal(failure.data().code, 'missing-working-roster')
+    assert.match(failure.data().detail, /working roster is missing/)
+
+    // Fixing the cause does not quietly replace it: a retry is a separate, deliberate step (RAID-014).
+    await seedRaid()
+    assert.equal(await captureRaidStartSnapshot(db, guild, raid, raid.id, now), 'skipped')
+    assert.equal((await startSweep(nextSnapshotExecution(now))).captured, 0)
+    assert.deepEqual((await record.get()).data(), written)
+    assert.equal((await guild.collection('raidSnapshotFailures').get()).size, 1)
+  })
+
+  test('a capture that fails after its manifest exists is marked failed in place, keeping what it wrote', async () => {
+    const root = raid.collection('snapshots').doc('start')
+    await root.set({ schemaVersion: 1, status: 'capturing', raidId: raid.id, scheduledStartAt: start, contentHash: 'incorrect-source', counts: { lineups: 3, characters: 2, accounts: 1 } })
+    await root.collection('characters').doc('main').set({ id: 'main', name: 'Earlier Attempt' })
+    assert.equal(await captureRaidStartSnapshot(db, guild, raid, raid.id, now), 'failed')
+    const manifest = (await root.get()).data()
+    assert.equal(manifest.status, 'failed')
+    assert.equal(manifest.failureCode, 'snapshot-source-changed')
+    assert.ok(manifest.failedAt instanceof Timestamp)
+    assert.equal(manifest.contentHash, 'incorrect-source')
+    assert.deepEqual(manifest.counts, { lineups: 3, characters: 2, accounts: 1 })
+    assert.equal('failureNotice' in manifest, false)
+    assert.equal((await root.collection('characters').doc('main').get()).data().name, 'Earlier Attempt')
+  })
+
+  test('a manifest for a different start is left alone and no failed record replaces it', async () => {
+    const root = raid.collection('snapshots').doc('start')
+    const other = { schemaVersion: 1, status: 'capturing', raidId: raid.id, scheduledStartAt: previousBoundary, contentHash: 'earlier-start' }
+    await root.set(other)
+    await raid.collection('planning').doc('working').delete()
+    assert.equal(await captureRaidStartSnapshot(db, guild, raid, raid.id, now), 'failed')
+    assert.deepEqual((await root.get()).data(), other)
+  })
+
+  test('a raid that no longer exists gets no failed record', async () => {
+    await raid.delete()
+    assert.equal(await captureRaidStartSnapshot(db, guild, raid, raid.id, now), 'failed')
+    assert.equal((await raid.collection('snapshots').doc('start').get()).exists, false)
+    assert.equal((await guild.collection('raidSnapshotFailures').get()).size, 1)
+  })
+
+  test('a raid with no scheduled start gets no failed record when its history is broken', async () => {
+    await raid.update({ startsAt: FieldValue.delete(), rev: 1 })
+    assert.equal(await captureRaidStartSnapshot(db, guild, raid, raid.id, now), 'failed')
+    assert.equal((await raid.collection('snapshots').doc('start').get()).exists, false)
+    assert.equal((await guild.collection('raidSnapshotFailures').get()).docs[0].data().code, 'invalid-raid-audit-history')
   })
 })
