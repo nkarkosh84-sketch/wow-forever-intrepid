@@ -10,6 +10,7 @@ data/loot/                     Loot table captures: item ids per creature, one f
 tests/
   rules/                       Firestore and Cloud Storage rules tests, run on the emulators (npm run test:rules)
   unit/                        Tests of pure functions, run by Node directly (npm run test:unit)
+  raid-coverage/               Tests of the shared buff and debuff coverage module, run with the unit tests (npm run test:unit)
 src/
   main.tsx, index.css          entry point and design tokens
   App.tsx                      composition root: shared state, hooks, and the layout of the shell

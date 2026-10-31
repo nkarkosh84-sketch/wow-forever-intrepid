@@ -69,7 +69,7 @@ npm run test:unit
 
 If you changed `firestore.rules` or `storage.rules`, also run `npm run test:rules` (see "Testing the Firestore rules" below).
 
-Then click through every tab as each role (use VIEW AS as a Guild Leader to preview Raid Leader and Member), open each dialog you touched, and make sure the browser console is clean. Automated checks cover the Firestore rules, the pure raid-preview helpers and the pure functions in `tests/unit/` (`npm run test:unit`, run directly by Node, no emulator), not the rendered UI, so say in the PR what you checked in the app.
+Then click through every tab as each role (use VIEW AS as a Guild Leader to preview Raid Leader and Member), open each dialog you touched, and make sure the browser console is clean. Automated checks cover the Firestore rules, the pure raid-preview helpers and the pure functions in `tests/unit/` and `tests/raid-coverage/` (`npm run test:unit`, run directly by Node, no emulator), not the rendered UI, so say in the PR what you checked in the app.
 
 For explanatory help or expandable read-only text, use the shared `HelpPopover` and follow [its interaction and browser-check contract](ARCHITECTURE.md#help-and-popovers). Do not put essential help only in `title` or hover handlers. Reading help must never trigger a save or change a selection.
 
@@ -97,7 +97,7 @@ The tests are in `tests/rules/`, written in TypeScript and run by Node's built-i
 
 ## Pull requests
 
-Character-readiness changes must keep `tests/rules/character-readiness.test.ts` passing: per-character owner/leader writes, reciprocal main/direct-alt ownership, removal, server stamps and field isolation. Leadership aggregation is covered in `tests/unit/leadership.test.ts`. Shared coverage changes also require `node --test tests/raid-coverage/*.test.ts`; the module is in `src/shared/raid-coverage/` and is reused by Teams and Leadership.
+Character-readiness changes must keep `tests/rules/character-readiness.test.ts` passing: per-character owner/leader writes, reciprocal main/direct-alt ownership, removal, server stamps and field isolation. Leadership aggregation is covered in `tests/unit/leadership.test.ts`. Shared coverage changes are covered by `tests/raid-coverage/`, which `npm run test:unit` runs with `tests/unit/` (`node --test tests/raid-coverage/*.test.ts` runs them alone); the module is in `src/shared/raid-coverage/` and is reused by Teams and Leadership.
 
 - Keep them small and about one thing. A refactor and a feature are separate PRs.
 - Work in your feature's folder under `src/features/`. If you must change a shared file, do it in its own commit and call it out in the PR description. Shared files are: `src/shared/**`, `src/shell/**`, `src/App.tsx`, `src/App.css`, `src/guildApi.ts`, `src/useGuildData.ts`, `src/useGuildSession.ts`, `src/security.ts`, `firestore.rules`, `storage.rules`, `firebase.json`, `package.json`, `package-lock.json`, `.nvmrc` and everything under `.github/`.
