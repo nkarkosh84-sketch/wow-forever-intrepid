@@ -3,15 +3,19 @@ import { getFirestore } from 'firebase-admin/firestore'
 import { onCall } from 'firebase-functions/v2/https'
 import { onDocumentWritten } from 'firebase-functions/v2/firestore'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
+import { defineSecret } from 'firebase-functions/params'
 import { addAbsence, removeAbsence, updateAbsence, saveResponse, synchronizeGuild, synchronizeMember, synchronizeRaid } from './raids.js'
 import { submitCharacterRequest as submitCharacterChange, resolveCharacterRequest as resolveCharacterChange } from './characters.js'
 import { changePlacement, createScheduledRaid as createRaid, initializePlanning, synchronizePlanning, synchronizePlanningGuild } from './raidPlanning.js'
 import { runRaidStartSnapshotSweep } from './raidStartSnapshot.js'
 import { changeStandingTeam } from './standingTeams.js'
+import { discordOptions, handleRaidWrite, runDiscordSweep } from './discord.js'
 
 initializeApp()
 const db = getFirestore()
 const options = { region: 'us-central1', maxInstances: 5 }
+// DISCORD-002: the raid channel's webhook address. Read only at run time, never logged; a value that is not a webhook address (such as "off") turns the posts off.
+const discordWebhook = defineSecret('DISCORD_WEBHOOK_URL')
 
 export const createScheduledRaid = onCall(options, (request) => createRaid(db, request))
 export const changeStandingTeamAssignment = onCall(options, (request) => changeStandingTeam(db, request))
@@ -37,6 +41,16 @@ export const synchronizeScheduledRaid = onDocumentWritten({
   await synchronizeRaid(db, event.params.guildId, event.params.raidId)
   await synchronizePlanning(db, event.params.guildId, event.params.raidId)
 })
+
+// DISCORD-002: separate from synchronizeScheduledRaid, which ignores name and description changes. Not retried: a Discord failure is recorded and the sweep retries it.
+export const announceRaidInDiscord = onDocumentWritten({
+  ...options, document: 'guilds/{guildId}/raids/{raidId}', retry: false, timeoutSeconds: 120, secrets: [discordWebhook],
+}, (event) => handleRaidWrite(db, {
+  guildId: event.params.guildId, raidId: event.params.raidId, before: event.data?.before.data(), after: event.data?.after.data(),
+}, discordOptions(discordWebhook.value())))
+export const sweepDiscordAnnouncements = onSchedule({
+  ...options, maxInstances: 1, schedule: '*/5 * * * *', timeZone: 'America/New_York', timeoutSeconds: 300, retryCount: 0, secrets: [discordWebhook],
+}, async () => { await runDiscordSweep(db, discordOptions(discordWebhook.value())) })
 
 export const synchronizeLinkedMember = onDocumentWritten({
   ...options, document: 'guilds/{guildId}/members/{uid}', retry: true,

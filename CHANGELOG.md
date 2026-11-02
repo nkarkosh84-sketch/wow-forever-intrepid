@@ -8,6 +8,7 @@ Earlier releases have not been reconstructed here. These entries do not assert t
 
 - The Guild Calendar has a **Show:** choice in its heading row (UX-007): turn Raids or Absences (unavailable dates) off to read the other alone, or both off for a bare month. Both are on when you open the page and the choice lasts until you reload; it changes only what you see. The counts in the heading and footer still count every raid and date range, and opening the calendar from a raid turns Raids back on.
 - Raid Teams and Scheduled Raids list Faerie Fire and Curse of Recklessness separately from Sunder Armor / Expose Armor.
+- Raids are announced in the guild's Discord channel (DISCORD-002): scheduling, changing or cancelling a raid posts or updates one message showing the start in each reader's own time zone, and reminders follow 24 hours and 1 hour before it starts.
 - Coverage uses consistent status labels and icons, with details about eligible providers, talents, party limits and conflicting effects.
 - Each upcoming raid on My dashboard now has a strip of its zone pictures above its details, the same pictures as on Scheduled Raids (RAID-017). A zone with no picture shows its color.
 - On a desktop window (1101px wide or more), Loot priorities puts the item first (UX-008): the item is twice as large, with its icon, alone at the left; where it drops and the council note come next, then the council order with the Award loot and Edit Prio buttons under it. The boss heading is a little larger. Narrower windows and phones look as before.
