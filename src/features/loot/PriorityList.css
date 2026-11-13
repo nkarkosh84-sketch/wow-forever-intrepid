@@ -25,6 +25,11 @@
 .priority-boss.zone-colored { padding-left: calc(var(--gutter) - 3px); border-left: 3px solid color-mix(in srgb, var(--zone-color) 70%, transparent); }
 .priority-row.zone-colored { box-shadow: inset 4px 0 0 var(--zone-color); }
 .priority-row.zone-colored .encounter-label { padding: 1px 8px; border-radius: 99px; border: 1px solid color-mix(in srgb, var(--zone-color) 42%, transparent); color: #526158; background: color-mix(in srgb, var(--zone-color) 13%, transparent); }
+.priority-list .priority-row .encounter-label,
+.priority-list .priority-row .council-note { color: #435248; font-size: 12px; overflow-wrap: anywhere; }
+.priority-list .priority-row .council-note .muted { color: inherit; }
+:root[data-theme='dark'] .priority-list .priority-row .encounter-label,
+:root[data-theme='dark'] .priority-list .priority-row .council-note { color: #d0dce8; }
 :root[data-theme='dark'] .priority-dungeon.zone-colored { border-bottom-color: color-mix(in srgb, var(--zone-color) 60%, #33465c); }
 :root[data-theme='dark'] .priority-row.zone-colored .encounter-label { color: #bfccd9; background: color-mix(in srgb, var(--zone-color) 20%, transparent); }
 .phase-notice { margin: 12px var(--gutter) 6px; padding: 9px var(--inner-pad-x); border: 1px solid #d9e4ee; border-radius: var(--card-radius); color: #3e5368; background: #f2f6fa; font-size: 11px; line-height: 1.45; }

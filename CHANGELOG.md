@@ -6,6 +6,8 @@ These entries reconcile changes present in verified production releases. They do
 
 ## Unreleased
 
+- Dungeon and boss labels and council notes are easier to read on Loot Priorities.
+
 - Guild Roster column headers sort the list in either direction, while keeping alts under their mains.
 - The Guild Roster header shows separate totals for mains and alts.
 
