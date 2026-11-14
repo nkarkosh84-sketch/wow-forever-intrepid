@@ -1,6 +1,7 @@
 .segment.roster-view-toggle { align-items: center; justify-content: center; }
 .roster-comments-toggle { order: -1; }
 .roster-table:not(.roster-with-comments) { min-width: 900px; }
+.roster-table:not(.roster-with-comments) tbody td { height: 40px; padding-block: 4px; }
 .roster-table:not(.roster-with-comments) .roster-col-character { width: 23%; }
 .roster-table:not(.roster-with-comments) .roster-col-class { width: 11%; }
 .roster-table:not(.roster-with-comments) .roster-col-spec { width: 14%; }
@@ -9,6 +10,17 @@
 .roster-table:not(.roster-with-comments) .roster-col-type { width: 11%; }
 .roster-table:not(.roster-with-comments) .roster-col-access { width: 11%; }
 .roster-table:not(.roster-with-comments) .roster-col-actions { width: 7%; }
+.roster-table.roster-with-readiness:not(.roster-with-comments) { min-width: 1000px; }
+.roster-with-readiness:not(.roster-with-comments) th, .roster-with-readiness:not(.roster-with-comments) td { padding-inline: 12px; }
+.roster-with-readiness:not(.roster-with-comments) .roster-col-character { width: 18%; }
+.roster-with-readiness:not(.roster-with-comments) .roster-col-class { width: 10%; }
+.roster-with-readiness:not(.roster-with-comments) .roster-col-spec { width: 12%; }
+.roster-with-readiness:not(.roster-with-comments) .roster-col-role { width: 9%; }
+.roster-with-readiness:not(.roster-with-comments) .roster-col-team { width: 12%; }
+.roster-with-readiness:not(.roster-with-comments) .roster-col-type { width: 10%; }
+.roster-with-readiness:not(.roster-with-comments) .roster-col-access { width: 10%; }
+.roster-with-readiness:not(.roster-with-comments) .roster-col-readiness { width: 13%; }
+.roster-with-readiness:not(.roster-with-comments) .roster-col-actions { width: 6%; }
 .roster-table.roster-with-comments { min-width: 640px; }
 .roster-with-comments .roster-col-character { width: 26%; }
 .roster-with-comments .roster-col-comment { width: auto; }

@@ -7,9 +7,10 @@ import { isRaidReady } from '../../functions/readiness.js'
 const stamps = { updatedBy: 'invented-account', updatedAt: Timestamp.fromMillis(10) }
 const complete = () => Object.fromEntries(readinessChecks.map(({ key }) => [key, true]))
 
-test('nine checks with five preparation checks; every completion combination agrees with backend eligibility', () => {
+test('nine checks with three preparation checks and four acknowledgments; every completion combination agrees with backend eligibility', () => {
   assert.equal(readinessChecks.length, 9)
-  assert.equal(readinessChecks.filter((entry) => 'preparation' in entry).length, 5)
+  assert.deepEqual(readinessChecks.filter((entry) => 'preparation' in entry).map(({ key }) => key), ['gear', 'professions', 'talentsAndAbilities'])
+  assert.deepEqual(readinessChecks.filter((entry) => 'acknowledgment' in entry).map(({ key }) => key), ['enchants', 'rotation', 'consumables', 'raidKnowledge'])
   for (let mask = 0; mask < 512; mask++) {
     const checklist = { ...emptyReadinessChecklist() }
     readinessChecks.forEach(({ key }, index) => { checklist[key] = !!(mask & (1 << index)) })

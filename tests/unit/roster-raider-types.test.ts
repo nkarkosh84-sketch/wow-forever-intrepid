@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { normalizeRosterRaiderType, raiderTypeLabel, raiderTypeOwner } from '../../src/features/roster/raiderTypes.ts'
+import { normalizeRosterRaiderType, raiderTypeLabel } from '../../src/features/roster/raiderTypes.ts'
+import { rosterAccountUid } from '../../src/features/roster/account.ts'
+import { sortRoster } from '../../src/features/roster/sort.ts'
 import type { PlayerRecord } from '../../src/shared/game/players.ts'
 
 const main: PlayerRecord = { id: 'main', name: 'Aldric', className: 'Warrior', specialization: 'Arms', role: 'Melee', linkedUid: 'member-a' }
@@ -16,13 +18,28 @@ describe('roster raider types', () => {
   })
 
   it('uses the linked main account for alts even if the main is not in the visible rows', () => {
-    assert.equal(raiderTypeOwner(main, roster), 'member-a')
-    assert.equal(raiderTypeOwner(alt, roster), 'member-a')
-    assert.equal(raiderTypeOwner({ ...main, linkedUid: undefined }, roster), undefined)
-    assert.equal(raiderTypeOwner(alt, new Map()), undefined)
-    assert.equal(raiderTypeOwner({ ...alt, mainId: 'alt' }, roster), undefined)
-    assert.equal(raiderTypeOwner({ ...alt, mainId: 'alt' }, new Map([['alt', alt]])), undefined)
-    assert.equal(raiderTypeOwner({ ...main, mainId: 'alt' }, roster), undefined)
+    assert.equal(rosterAccountUid(main, roster), 'member-a')
+    assert.equal(rosterAccountUid(alt, roster), 'member-a')
+    assert.equal(rosterAccountUid({ ...main, linkedUid: undefined }, roster), undefined)
+    assert.equal(rosterAccountUid(alt, new Map()), undefined)
+    assert.equal(rosterAccountUid({ ...alt, mainId: 'alt' }, roster), undefined)
+    assert.equal(rosterAccountUid({ ...alt, mainId: 'alt' }, new Map([['alt', alt]])), undefined)
+    assert.equal(rosterAccountUid({ ...main, mainId: 'alt' }, roster), undefined)
+  })
+
+  it('does not imply access for an alt of an unlinked main or use a conflicting direct alt link', () => {
+    const unlinked = new Map([[main.id, { ...main, linkedUid: undefined }]])
+    assert.equal(rosterAccountUid(alt, unlinked), undefined)
+    assert.equal(rosterAccountUid({ ...alt, linkedUid: 'conflicting-account' }, roster), 'member-a')
+    assert.equal(rosterAccountUid({ ...alt, linkedUid: 'conflicting-account' }, unlinked), undefined)
+  })
+
+  it('sorts App Access by the inherited account status in either direction', () => {
+    const unlinked: PlayerRecord = { ...main, id: 'unlinked', name: 'Bryn', linkedUid: undefined }
+    const players = [unlinked, alt, main]
+    const value = (player: PlayerRecord) => rosterAccountUid(player, roster) ? 'Linked' : 'No account'
+    assert.deepEqual(sortRoster(players, 'access', 'asc', () => undefined, [], value).map((player) => player.id), ['main', 'alt', 'unlinked'])
+    assert.deepEqual(sortRoster(players, 'access', 'desc', () => undefined, [], value).map((player) => player.id), ['unlinked', 'main', 'alt'])
   })
 
   it('shows the member-facing names without treating an unset choice as Casual', () => {

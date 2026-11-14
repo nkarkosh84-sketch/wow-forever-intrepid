@@ -6,6 +6,10 @@ These entries reconcile changes present in verified production releases. They do
 
 ## Unreleased
 
+- Raid Readiness separates character preparation from ongoing acknowledgments for enchants, rotation, consumables, and learning raids. Existing saved checks are preserved. (MEMBER-011 follow-up)
+- Guild Roster separates App Access from Raid Readiness, with a compact readiness progress bar and count, and tighter rows. (MEMBER-011 follow-up)
+- Guild Roster starts with alts hidden and names sorted A–Z. An alt's App Access reflects its main's linked account. (MEMBER-011 follow-up)
+- Unassigned alts have a blank 10-player team cell on Guild Roster; only unassigned mains show "Unassigned." (MEMBER-011 follow-up)
 - My dashboard has a preparation checklist and progress bar for each character. Save progress as you go; all nine checks are required to be raid ready. Previously marked characters must complete the checklist too.
 - Guild Roster column headers sort the list in either direction, while keeping alts under their mains.
 - The Guild Roster header shows separate totals for mains and alts.

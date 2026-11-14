@@ -2,6 +2,7 @@
 .raid-readiness-control:disabled { opacity: 0.6; cursor: default; }
 .raid-readiness-control:focus-visible, .raid-readiness-check:has(input:focus-visible) { outline: 2px solid #2877b9; outline-offset: 3px; }
 .raid-readiness-control small { font-size: 11px; }
+.raid-readiness-control-compact { justify-content: center; width: 100%; min-height: 0; gap: 2px; padding: 3px 8px; margin: 0; }
 .raid-readiness-track { display: block; height: 5px; min-width: 72px; border-radius: 3px; background: #dce5ed; overflow: hidden; }
 .raid-readiness-track > span { display: block; height: 100%; }
 html:has(.raid-readiness-form), body:has(.raid-readiness-form) { overflow: hidden; }
