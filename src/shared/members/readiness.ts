@@ -3,13 +3,13 @@ import { Timestamp } from 'firebase/firestore'
 export const readinessChecks = [
   { key: 'level60', label: 'Reached level 60' },
   { key: 'raidRequirements', label: 'Completed the required raid keys and attunements' },
-  { key: 'gear', label: 'Have pre-raid best-in-slot gear, or have spent serious time (multiple hours) working to gear', preparation: true },
-  { key: 'enchants', label: 'Gear is enchanted with mostly the best available options', preparation: true },
-  { key: 'professions', label: 'Made progress in professions that advance this character (300 is not required)', preparation: true },
+  { key: 'gear', label: 'I have pre-raid best-in-slot gear, or have spent serious time (multiple hours) working to gear', preparation: true },
+  { key: 'professions', label: 'I have made progress in professions that advance my character (300 is not required)', preparation: true },
   { key: 'talentsAndAbilities', label: 'Appropriately talented and have all abilities trained to maximum ranks', preparation: true },
-  { key: 'rotation', label: 'Understand my rotation and am comfortable with all abilities in my toolkit', preparation: true },
-  { key: 'consumables', label: 'Understand my consumables and have most of them ready' },
-  { key: 'raidKnowledge', label: 'Understand the current raids and have made an effort to learn the fights and zones' },
+  { key: 'enchants', label: 'I will keep my gear enchanted', acknowledgment: true },
+  { key: 'rotation', label: 'I understand my rotation and am comfortable with all abilities in my toolkit', acknowledgment: true },
+  { key: 'consumables', label: 'I understand my consumables and will have them ready', acknowledgment: true },
+  { key: 'raidKnowledge', label: 'I understand the current raids and make an effort to learn the fights and zones', acknowledgment: true },
 ] as const
 
 export type ReadinessCheck = typeof readinessChecks[number]['key']

@@ -16,16 +16,16 @@ function canManageReadiness(characterId: string, ctx: TabContext) {
   return !!character && (ctx.identity.canEditRoster || !!main && (character.id === main.id || character.mainId === main.id && !character.linkedUid))
 }
 
-export function RaidReadinessControl({ characterId, name, ctx }: { characterId: string; name: string; ctx: TabContext }) {
+export function RaidReadinessControl({ characterId, name, ctx, compact = false }: { characterId: string; name: string; ctx: TabContext; compact?: boolean }) {
   const { readiness, readinessLoaded, readinessError } = ctx.data
   const record = readiness.find((entry) => entry.id === characterId)
   const progress = readinessProgress(record?.checklist ?? emptyReadinessChecklist())
   if (!canManageReadiness(characterId, ctx)) return null
-  return <button type="button" className="raid-readiness-control" disabled={ctx.feedback.busy || !readinessLoaded || !!readinessError} onClick={() => {
+  return <button type="button" className={`raid-readiness-control${compact ? ' raid-readiness-control-compact' : ''}`} disabled={ctx.feedback.busy || !readinessLoaded || !!readinessError} onClick={() => {
     ctx.openModal(({ close, live }) => <ReadinessForm characterId={characterId} name={name} close={close} live={live} />)
   }} aria-label={`Raid readiness: ${name}. ${readinessError ? 'Unavailable' : !readinessLoaded ? 'Loading' : `${progress.completed} of ${progress.total} complete. ${record?.ready ? 'Raid Ready' : 'Not raid ready'}`}`}>
-    <span>{readinessError ? 'Readiness unavailable' : !readinessLoaded ? 'Loading readiness...' : record?.ready ? 'Raid Ready' : 'Prepare for raids'}</span>
-    {readinessLoaded && !readinessError && <><span className="raid-readiness-track" aria-hidden="true"><span style={{ width: `${progress.percent}%`, backgroundColor: progressColor(progress.percent) }} /></span><small>{progress.completed}/{progress.total} · {progress.percent}%</small></>}
+    {(!compact || !readinessLoaded || !!readinessError) && <span>{readinessError ? 'Readiness unavailable' : !readinessLoaded ? 'Loading readiness...' : record?.ready ? 'Raid Ready' : 'Prepare for raids'}</span>}
+    {readinessLoaded && !readinessError && <><span className="raid-readiness-track" aria-hidden="true"><span style={{ width: `${progress.percent}%`, backgroundColor: progressColor(progress.percent) }} /></span><small>{progress.completed}/{progress.total}{compact ? ' - ' : ' · '}{progress.percent}%</small></>}
   </button>
 }
 
@@ -69,7 +69,7 @@ function ReadinessForm({ characterId, name, close, live }: { characterId: string
   }
   return <Modal title={`Raid readiness: ${name}`} onClose={dismiss}>
     <form className="raid-readiness-form" onSubmit={(event) => void save(event)}>
-      <p>Check what you have completed for this character. Save your progress at any time; all nine checks are required to be raid ready.</p>
+      <p>Confirm your preparation and acknowledgments for this character. Save your progress at any time; all nine checks are required to be raid ready.</p>
       {initial && !initial.checklist && <p className="raid-readiness-transition">The previous ready/not-ready flag did not record these steps. Please complete this checklist; no steps have been assumed complete.</p>}
       <div className="raid-readiness-progress">
         <label htmlFor={progressId}>{progress.completed} of {progress.total} complete · {progress.percent}%</label>
@@ -78,8 +78,8 @@ function ReadinessForm({ characterId, name, close, live }: { characterId: string
       </div>
       <fieldset disabled={disabled} className="raid-readiness-checks"><legend>Readiness checklist</legend>
         {readinessChecks.filter((entry) => ['level60', 'raidRequirements'].includes(entry.key)).map(check)}
-        <fieldset className="raid-readiness-preparation"><legend>Have spent time preparing this character for raiding</legend>{readinessChecks.filter((entry) => 'preparation' in entry).map(check)}</fieldset>
-        {readinessChecks.filter((entry) => ['consumables', 'raidKnowledge'].includes(entry.key)).map(check)}
+        <fieldset className="raid-readiness-preparation"><legend>I have spent time preparing my character for raiding:</legend>{readinessChecks.filter((entry) => 'preparation' in entry).map(check)}</fieldset>
+        <fieldset className="raid-readiness-preparation"><legend>Acknowledge that:</legend>{readinessChecks.filter((entry) => 'acknowledgment' in entry).map(check)}</fieldset>
       </fieldset>
       <p className="raid-readiness-note">This is your confirmation of preparation, not automatic game verification. Readiness does not reserve a raid spot or restrict sign-ups. Unchecking a step and saving marks this character not ready.</p>
       {unavailable && <p role="alert">{live.data.readinessError || 'Loading raid readiness. Please wait before saving.'}</p>}
