@@ -80,6 +80,10 @@ local function getLoot()
   return loot
 end
 
+-- Random whole numbers from 1 to n for ids. The ids of a load must differ from the ids of the loads before: the clock's milliseconds
+-- are mixed into the random numbers.
+local function random(n) return (math.floor(math.random() * n + (GetTime() % 1) * 1000) % n) + 1 end
+
 -- The exchange with the Raid Desk (game/Exchange.lua): the night the loot master imported (/im import) and the awards the sessions make,
 -- which /im export turns into the awards string to paste into the Raid Desk.
 local council
@@ -89,9 +93,7 @@ local function getExchange()
   if not exchange then
     IntrepidManagerDB = IntrepidManagerDB or {}
     exchange = ns.Game.Exchange.new({
-      db = IntrepidManagerDB, version = addonVersion(),
-      -- (the ids of a load must differ from the ids of the loads before: the clock's milliseconds are mixed into the random numbers)
-      random = function(n) return (math.floor(math.random() * n + (GetTime() % 1) * 1000) % n) + 1 end,
+      db = IntrepidManagerDB, version = addonVersion(), random = random,
       sessionOpen = function() return council ~= nil and council.sessionOpen() end,
     })
   end
@@ -113,6 +115,28 @@ end
 local function journalSource(itemId)
   local source = getJournal().sourceOf(itemId)
   return source and (source.boss .. ", " .. source.dungeon) or nil
+end
+
+-- The drop log (core/DropLog.lua, game/DropWatch.lua): inside dungeons and raids it counts which creature or encounter dropped which
+-- items, never who looted them, for the Raid Desk's drop lists. It listens from the moment the addon loads (ADDON_LOADED below).
+local dropLog, dropWatch
+local function getDropLog()
+  if not dropLog then
+    IntrepidManagerDB = IntrepidManagerDB or {}
+    dropLog = ns.DropLog.new(IntrepidManagerDB)
+  end
+  return dropLog
+end
+local function getDropWatch()
+  if not dropWatch then dropWatch = ns.Game.DropWatch.new({ log = getDropLog() }) end
+  return dropWatch
+end
+
+-- Where an item drops, for the loot master's window: what this client's own loot windows saw, else DungeonJournal.
+local function itemSource(itemId)
+  local ok, seen = pcall(function() return getDropLog().sourceOf(itemId) end)
+  if ok and seen then return seen end
+  return journalSource(itemId)
 end
 
 -- /im dj [list]: what DungeonJournal holds. The check is kept in IntrepidManagerDB.dj (counts and true or false only) and reaches the
@@ -149,7 +173,7 @@ local function getCouncil()
   if not council then
     IntrepidManagerDB = IntrepidManagerDB or {}
     council = ns.Game.CouncilSession.new({
-      out = out, db = IntrepidManagerDB, version = addonVersion(), exchange = getExchange(), sourceOf = journalSource,
+      out = out, db = IntrepidManagerDB, version = addonVersion(), exchange = getExchange(), sourceOf = itemSource,
     })
   end
   return council
@@ -159,6 +183,7 @@ end
 -- the session tells them through its hooks, an offer from the loot master opens the raider's frame by itself, and /im session
 -- (with no word) opens the loot master's window.
 local councilWindows
+local dropsChoice, dropsModel -- the drops window's choice and view-model (/im drops, below)
 local function getCouncilWindows()
   if councilWindows then return councilWindows end
   IntrepidManagerDB = IntrepidManagerDB or {}
@@ -199,6 +224,12 @@ local function getCouncilWindows()
     done = function()
       out(InCombatLockdown and InCombatLockdown() and "Type /reload when the fight is over, so the game writes your awards to its file."
         or "Type /reload so the game writes your awards to its file.")
+    end,
+  })
+  windows.drops = ns.UI.DropsWindow.new(kit, {
+    journal = function(on)
+      dropsChoice.includeJournal = on
+      windows.drops.update(dropsModel())
     end,
   })
   windows.offers = ns.UI.ResponseFrame.new(kit, {
@@ -265,6 +296,103 @@ local function wireCouncilWindows()
     windows.versions.update(session.versionsModel())
     windows.versions.show()
   end
+end
+
+-- /im drops [list, all, <numbers> or dj <dungeon>]: the drops string for the Raid Desk's drop list import (core/Drops.lua), in the drops
+-- window. Which zones it holds is remembered until the next /im drops.
+local DROPS_NOTICE = "The Raid Desk cannot import drops strings yet (LOOT-008): this one is for testing."
+local DAY = 86400
+dropsChoice = { days = 7, scope = "seen in the last 7 days", includeJournal = false }
+
+local function journalOptions(dj)
+  return { version = dj.version(), zoneFor = function(name)
+    local found = dj.find(name)
+    return found and dj.zone(found) or nil
+  end }
+end
+
+function dropsModel()
+  local dj = getJournal()
+  local at = GetServerTime()
+  local options = {
+    at = at, id = ns.Ids.dropsId(at, random), version = addonVersion(),
+    dateOf = function(t) return date("!%Y-%m-%d", t) end,
+    keys = dropsChoice.keys, extra = dropsChoice.extra,
+  }
+  if not options.keys and dropsChoice.days then options.since = at - dropsChoice.days * DAY end
+  local journalOn = dj.available()
+  if journalOn and (dropsChoice.includeJournal or dropsChoice.extra) then
+    options.journal = journalOptions(dj)
+    if not dropsChoice.includeJournal then options.journal.zoneFor = nil end
+  end
+  pcall(getDropLog().settle, at) -- the corpses held for their rolls longer than the wait count as creatures now
+  local model, counts = ns.Drops.build(getDropLog().store(), options)
+  local vm = {
+    zones = counts.zones, sources = counts.sources, seen = counts.seen, journal = counts.journal, scope = dropsChoice.scope,
+    journalAvailable = journalOn, includeJournal = dropsChoice.includeJournal and journalOn, notice = DROPS_NOTICE,
+  }
+  if counts.zones > 0 then vm.text = ns.Drops.encode(model) end
+  return vm
+end
+
+local function openDrops()
+  local vm = dropsModel()
+  getCouncilWindows().drops.open(vm)
+  return vm
+end
+
+local function runDrops(argument)
+  local text = string.match(argument or "", "^%s*(.-)%s*$")
+  local word, rest = string.match(text, "^(%S*)%s*(.-)$")
+  word = string.lower(word or "")
+  local zones = getDropLog().zones()
+  if word == "list" then
+    if #zones == 0 then
+      out("The drop log is empty. It records loot windows inside dungeons and raids.")
+      return
+    end
+    for i, zone in ipairs(zones) do
+      out(i .. ". " .. zone.name .. " (" .. zone.kind .. (zone.players and (", " .. zone.players .. " players") or "") .. "): "
+        .. zone.creatures .. (zone.creatures == 1 and " creature" or " creatures") .. ", " .. zone.bosses .. (zone.bosses == 1 and " boss" or " bosses")
+        .. ", " .. zone.items .. (zone.items == 1 and " item" or " items") .. (zone.last and (", last seen " .. date("!%Y-%m-%d", zone.last)) or ""))
+    end
+    out("/im drops 1 3 exports those zones; /im drops all exports every zone.")
+    return
+  end
+  if word == "" then
+    dropsChoice.keys, dropsChoice.extra, dropsChoice.days, dropsChoice.scope = nil, nil, 7, "seen in the last 7 days"
+  elseif word == "all" then
+    dropsChoice.keys, dropsChoice.extra, dropsChoice.days, dropsChoice.scope = nil, nil, nil, "(all of them)"
+  elseif word == "dj" then
+    local dj = getJournal()
+    if not dj.available() then
+      out("DungeonJournal isn't installed or isn't loaded.")
+      return
+    end
+    local found = dj.find(rest)
+    local zone = found and dj.zone(found)
+    if not zone then
+      out("DungeonJournal has no dungeon called '" .. string.sub(string.gsub(rest, "|", ""), 1, 40) .. "'. /im dj list shows them.")
+      return
+    end
+    dropsChoice.keys, dropsChoice.extra, dropsChoice.days, dropsChoice.scope = {}, { zone }, nil, "from DungeonJournal"
+  elseif string.find(text, "^[%d%s,]+$") then
+    local keys = {}
+    for n in string.gmatch(text, "%d+") do
+      local zone = zones[tonumber(n)]
+      if not zone then
+        out("There is no zone " .. n .. ". /im drops list shows them.")
+        return
+      end
+      keys[#keys + 1] = zone.key
+    end
+    dropsChoice.keys, dropsChoice.extra, dropsChoice.days, dropsChoice.scope = keys, nil, nil, "picked"
+  else
+    out("/im drops exports the zones seen in the last 7 days; /im drops list numbers the zones; /im drops 1 3 exports those; /im drops all every zone; /im drops dj <dungeon> DungeonJournal's list of one dungeon.")
+    return
+  end
+  local vm = openDrops()
+  out(ns.UI.DropsWindow.summary(vm))
 end
 
 -- /im msgtest [run, stop or clear]: measures addon messages between two clients in a group (net/MsgTest.lua). The client that does
@@ -340,13 +468,15 @@ local function handle(input)
     getCouncil().tradeCommand(argument)
   elseif command == "dj" then
     runJournal(argument)
+  elseif command == "drops" then
+    runDrops(argument)
   elseif command == "offers" then
     getCouncil().offers()
     local windows = getCouncilWindows()
     windows.offers.update(getCouncil().offerModel())
     windows.offers.show()
   else
-    out("version " .. addonVersion() .. ". Commands: /im version, /im selftest [label], /im window [session, import, export, icons, picker or confirm] [roomy] [flat], /im facts [label], /im inspect, /im msgtest [run, stop or clear], /im loot [give, sweep or stop], /im session [add, bags, start, results or end], /im respond, /im offers, /im award <item> <name>, /im trade <name>, /im versions, /im import, /im export, /im dj [list]")
+    out("version " .. addonVersion() .. ". Commands: /im version, /im selftest [label], /im window [session, import, export, icons, picker or confirm] [roomy] [flat], /im facts [label], /im inspect, /im msgtest [run, stop or clear], /im loot [give, sweep or stop], /im session [add, bags, start, results or end], /im respond, /im offers, /im award <item> <name>, /im trade <name>, /im versions, /im import, /im export, /im dj [list], /im drops [list, all, <numbers> or dj <dungeon>]")
   end
 end
 
@@ -369,6 +499,8 @@ frame:SetScript("OnEvent", function(_, event, name)
     if not ok then out("message test could not start listening: " .. tostring(err)) end
     local lootOk, lootErr = pcall(function() getLoot().listen() end)
     if not lootOk then out("the loot test could not start listening: " .. tostring(lootErr)) end
+    local dropsOk, dropsErr = pcall(function() getDropWatch().listen() end)
+    if not dropsOk then out("the drop log could not start listening: " .. tostring(dropsErr)) end
     local councilOk, councilErr = pcall(function()
       getCouncil().listen()
       wireCouncilWindows()

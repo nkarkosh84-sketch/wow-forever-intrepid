@@ -75,6 +75,17 @@ read_globals = {
   "UnitExists",
   "UnitIsConnected",
   "UnitName",
+  -- the drop log (game/DropWatch.lua)
+  "C_LootHistory",
+  "C_Spell",
+  "GetInstanceInfo",
+  "GetLootRollItemInfo",
+  "GetLootRollItemLink",
+  "GetLootSourceInfo",
+  "GetSpellInfo",
+  "IsInInstance",
+  "UnitClassification",
+  "UnitGUID",
 }
 
 -- Test files define their own helpers (see tests/run.lua).

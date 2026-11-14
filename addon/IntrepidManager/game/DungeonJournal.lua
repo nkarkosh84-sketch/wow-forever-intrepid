@@ -27,7 +27,8 @@
 --   dj.open(itemId)      -- true when the journal opened at the item
 --   dj.check()           -- what the journal looks like, for the result file (counts and true/false only)
 --
--- A candidate zone: { name, kind = "dungeon", players = 5, partial = true?, sources = { { npcId?, name, kind, itemIds } }, zoneWide = { ids } }.
+-- A candidate zone: { name, kind = "dungeon", players = 5, partial = true?, sources = { { npcId?, name, kind, itemIds } }, zoneWide = { ids },
+-- skipped = the rows with no valid item id }.
 -- A boss's items include its shared items. The journal's trash pages have no creature: their items go to the zone-wide list. Item ids
 -- outside 1 to 100,000,000 (the journal keeps a few rows at 0 until it learns the id) are left out.
 
@@ -105,16 +106,22 @@ function DungeonJournal.new(options)
     return nil
   end
 
-  -- The item ids of one list of the journal's loot rows, added to `into` without repeats.
+  -- The item ids of one list of the journal's loot rows, added to `into` without repeats. Returns how many rows had no valid id.
   local function addIds(rows, into, seen)
-    if type(rows) ~= "table" then return end
+    if type(rows) ~= "table" then return 0 end
+    local skipped = 0
     for _, row in ipairs(rows) do
       local id = type(row) == "table" and row[1] or nil
-      if gameId(id) and not seen[id] then
-        seen[id] = true
-        into[#into + 1] = id
+      if gameId(id) then
+        if not seen[id] then
+          seen[id] = true
+          into[#into + 1] = id
+        end
+      elseif type(row) == "table" then
+        skipped = skipped + 1
       end
     end
+    return skipped
   end
 
   -- The journal's dungeon `name` as a candidate zone, or nil.
@@ -122,18 +129,18 @@ function DungeonJournal.new(options)
     local entry = fdj.DB[name]
     local zoneName = cleanName(name)
     if type(entry) ~= "table" or not zoneName then return nil end
-    local zone = { name = zoneName, kind = "dungeon", players = 5, partial = entry.fullItemsTBD == true or nil, sources = {}, zoneWide = {} }
+    local zone = { name = zoneName, kind = "dungeon", players = 5, partial = entry.fullItemsTBD == true or nil, sources = {}, zoneWide = {}, skipped = 0 }
     local wideSeen = {}
     for _, boss in ipairs(type(entry.bosses) == "table" and entry.bosses or {}) do
       if type(boss) == "table" and not boss.recipeTab then
         if boss.trash then
-          addIds(boss.loot, zone.zoneWide, wideSeen)
+          zone.skipped = zone.skipped + addIds(boss.loot, zone.zoneWide, wideSeen)
         else
           local bossName = cleanName(boss.name)
           if bossName then
             local ids, seen = {}, {}
-            addIds(boss.loot, ids, seen)
-            addIds(call(fdj, "GetBossSharedLoot", name, boss), ids, seen)
+            zone.skipped = zone.skipped + addIds(boss.loot, ids, seen)
+            zone.skipped = zone.skipped + addIds(call(fdj, "GetBossSharedLoot", name, boss), ids, seen)
             zone.sources[#zone.sources + 1] = {
               npcId = gameId(boss.npcID) and boss.npcID or nil,
               name = bossName,

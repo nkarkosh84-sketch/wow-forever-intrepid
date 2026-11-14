@@ -405,3 +405,54 @@ test("/im award and /im trade answer on the whole addon: no session yet, and the
   is_true(string.find(game.output(), "/im award <item> <name>, /im trade <name>", 1, true) ~= nil)
   eq(string.find(game.output(), "error: ", 1, true), nil)
 end)
+
+test("/im drops on the whole addon: a boss killed and looted in a dungeon, then the drops window holds it; every word runs", function()
+  local BOSS = 990011
+  local corpse = "Creature-0-4170-389-12-" .. BOSS .. "-0000000001"
+  local game = load({ loot = function(g)
+    FakeLoot.install(g, { items = {} })
+    local env = g.env
+    env.IsInInstance = function() return true, "party" end
+    env.GetInstanceInfo = function() return "Hollow Test Keep", "party", 1, "Normal", 5, 0, false, 9100 end
+    env.UnitGUID = function(unit) if unit == "boss1" then return corpse end end
+    env.C_LootHistory = { GetSortedDropsForEncounter = function() return {} end }
+    env.C_Item = { GetItemIconByID = function(id) return 133000 + id end, GetItemInfo = function() return nil end }
+    env.GameTooltip = { SetOwner = function() end, SetHyperlink = function() end, Show = function() end, Hide = function() end }
+  end })
+  game.say("drops")
+  is_true(string.find(game.output(), "Nothing to export yet", 1, true) ~= nil)
+  game.say("drops list")
+  is_true(string.find(game.output(), "The drop log is empty.", 1, true) ~= nil)
+
+  game.send("ENCOUNTER_START", 3001, "The Fixture Warden", 1, 5)
+  game.send("ENCOUNTER_END", 3001, "The Fixture Warden", 1, 5, 1)
+  local loot = FakeLoot.install(game, { items = { { id = 900101, name = "Fixture Robe", quality = 3, source = corpse } } })
+  game.send("LOOT_READY", false)
+  loot.close()
+
+  game.say("drops list")
+  is_true(string.find(game.output(), "1. Hollow Test Keep (dungeon, 5 players): 1 creature, 1 boss, 1 item", 1, true) ~= nil)
+  game.say("drops")
+  is_true(string.find(game.output(), "1 zone seen in the last 7 days: 1 creature, 1 item seen in the game.", 1, true) ~= nil)
+  local text
+  for _, frame in ipairs(game.frames) do
+    local state = game.state(frame)
+    if type(state.text) == "string" and string.find(state.text, "^IM1:drops:") then text = state.text end
+  end
+  is_true(text ~= nil)
+  local read = game.ns.Envelope.read(text, "drops")
+  is_true(read.ok)
+  eq(read.model.zones[1].sources[1].name, "The Fixture Warden")
+  eq(read.model.zones[1].sources[1].itemIds[1], 900101)
+  is_true(game.ns.Drops.check(read.model).ok)
+  -- every other word: no error reaches the chat
+  for _, words in ipairs({ "drops all", "drops 1", "drops 1, 1", "drops 7", "drops dj Hollow Test Keep", "drops nonsense" }) do game.say(words) end
+  is_true(string.find(game.output(), "There is no zone 7.", 1, true) ~= nil)
+  is_true(string.find(game.output(), "DungeonJournal isn't installed or isn't loaded.", 1, true) ~= nil)
+  is_true(string.find(game.output(), "/im drops exports the zones seen in the last 7 days", 1, true) ~= nil)
+  eq(string.find(game.output(), "error: ", 1, true), nil)
+  eq(string.find(game.output(), "the drop log could not start", 1, true), nil) -- (this test has no chat stand-in, so the message test may not start)
+  deep_eq(game.audit(), {})
+  -- the boss's item now says where it drops, from this client's own window
+  eq(game.env.IntrepidManagerDB.drops.zones["9100:1"].sources["n" .. BOSS].items[900101].n, 1)
+end)

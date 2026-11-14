@@ -25,7 +25,7 @@ local Crc32 = ns.Crc32
 local Json = ns.Json
 
 -- The newest schema this version reads, per kind. A kind that is not listed is not one of ours.
-Envelope.SCHEMAS = { night = 1, awards = 1 }
+Envelope.SCHEMAS = { night = 1, awards = 1, drops = 1 }
 
 -- A number as text, without "%d" (which passes through a C long, 32 bits on Windows).
 local function number(n)
@@ -46,6 +46,7 @@ end
 local HOME = {
   night = "Paste night strings into the addon.",
   awards = "Paste awards strings into the Raid Desk importer.",
+  drops = "Paste drops strings into the Raid Desk's drop list import.",
 }
 
 -- The messages of the spec (section 1.1), one function per code. They get the details given to `problem`.

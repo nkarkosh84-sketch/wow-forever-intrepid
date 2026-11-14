@@ -1472,21 +1472,27 @@
   "events": {
    "ADDON_ACTION_BLOCKED": "the probe registered it for /ip give but nothing was ever blocked, so it was never seen to fire; the trade code listens for it to tell a refused call from a quiet failure",
    "ADDON_ACTION_FORBIDDEN": "the probe registered it for /ip give but nothing was ever blocked, so it was never seen to fire; the trade code listens for it to tell a refused call from a quiet failure",
-   "INSPECT_READY": "Blizzard's inspect event (it comes after NotifyInspect); not in any probe or self-test result, so it is used only by /im inspect, a test build"
+   "INSPECT_READY": "Blizzard's inspect event (it comes after NotifyInspect); not in any probe or self-test result, so it is used only by /im inspect, a test build",
+   "PLAYER_TARGET_CHANGED": "The drop log (game/DropWatch.lua) reads the targeted creature's name and classification. A Blizzard event; not in any probe or self-test result yet.",
+   "UNIT_SPELLCAST_SUCCEEDED": "The drop log (game/DropWatch.lua) listens for the player's own casts (RegisterUnitEvent on player) to leave out the loot window of Skinning, Mining, Herb Gathering and Pick Pocket. A Blizzard event; not in any probe or self-test result yet (stats.gatherWindows shows it working).",
+   "UPDATE_MOUSEOVER_UNIT": "The drop log (game/DropWatch.lua) reads the creature under the mouse: its name and classification. A Blizzard event; not in any probe or self-test result yet."
   },
   "fonts": {},
   "frame_types": {},
   "globals": {
    "C_ChallengeMode": "ForeverLoot only calls it behind an existence check, so its use shows nothing about whether the client has it.",
+   "C_Spell": "The drop log names the player's cast to tell a gathering spell (game/DropWatch.lua). Modern clients have C_Spell.GetSpellName; checked before use, with GetSpellInfo as the fallback. Not probed yet.",
    "ForeverDungeonJournal_NS": "Set by the optional addon DungeonJournal (folder ForeverDungeonJournal, Core/Bootstrap.lua) when the player has it installed; read on the loot owner's copy, 2026-11-12. /im dj records whether it is there. Read only, every read guarded.",
    "GetAddOnMetadata": "ForeverLoot only reaches it as a fallback after C_AddOns.GetAddOnMetadata. The probe saw C_AddOns.GetAddOnMetadata and found the old AddOn globals missing (GetAddOnInfo, GetNumAddOns, IsAddOnLoaded), so this one is probably missing too. Harmless as a fallback; remove it or test it.",
    "GetMouseButtonClicked": "ForeverLoot only calls it behind an existence check, so its use shows nothing about whether the client has it.",
    "GetNumClasses": "ForeverLoot only calls it behind an existence check, so its use shows nothing about whether the client has it.",
    "GetNumGuildMembers": "ForeverLoot only calls it behind an existence check, so its use shows nothing about whether the client has it.",
+   "GetSpellInfo": "The drop log names the player's cast to tell a gathering spell (game/DropWatch.lua). Modern clients have C_Spell.GetSpellName; checked before use, with GetSpellInfo as the fallback. Not probed yet.",
    "GuildControlGetNumRanks": "ForeverLoot only calls it behind an existence check, so its use shows nothing about whether the client has it.",
    "ITEM_QUALITY_COLORS": "ForeverLoot only calls it behind an existence check, so its use shows nothing about whether the client has it.",
    "LOCALIZED_CLASS_NAMES_MALE": "ForeverLoot only calls it behind an existence check, so its use shows nothing about whether the client has it.",
-   "TradeFrame": "ForeverLoot only calls it behind an existence check, so its use shows nothing about whether the client has it."
+   "TradeFrame": "ForeverLoot only calls it behind an existence check, so its use shows nothing about whether the client has it.",
+   "UnitClassification": "The drop log (game/DropWatch.lua) asks it whether a creature under the mouse or targeted is rare (rare, rareelite). Not in any probe or self-test result yet: a dungeon run with the drop log answers it (stats.raresSeen)."
   },
   "methods": {
    "SetInventoryItem": "Blizzard's GameTooltip method for an equipped item; not in any result yet. /im facts calls it on the tooltip and records what the tooltip then holds, so the next run settles it"
@@ -1494,6 +1500,9 @@
   "namespaces": {
    "C_ChallengeMode": {
     "IsChallengeModeActive": "ForeverLoot only calls it behind an existence check (C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive()), so its use shows nothing about whether the client has it."
+   },
+   "C_Spell": {
+    "GetSpellName": "The name of a spell, for the drop log's gathering check (game/DropWatch.lua). Not probed yet; GetSpellInfo is the fallback."
    }
   },
   "templates": {}

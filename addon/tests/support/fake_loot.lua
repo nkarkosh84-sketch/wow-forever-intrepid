@@ -8,6 +8,9 @@
 --   loot.gives            -- the calls of GiveMasterLoot: { slot, index, name }
 --   loot.close()          -- the window closes (LOOT_CLOSED); loot.open(items) opens a new one
 --
+-- An item may name the corpse it came from (`source`, a GUID, or a list of GUIDs for area loot; default options.source) and say it
+-- starts a quest (`quest = true`): GetLootSourceInfo and GetLootSlotInfo's seventh answer give them, as the drop log reads them.
+--
 -- options: me (the name of the player, default the first candidate), candidates (names, in the game's order), items, money
 -- (a money slot is added first), delay (seconds until a give clears the slot, default 0.2), keepOpen (the window stays open when the
 -- last item is gone), full (set of names whose bags are full),
@@ -57,7 +60,18 @@ function FakeLoot.install(game, options)
   env.GetLootSlotInfo = function(slot)
     local entry = loot.slots[slot]
     if not entry or entry.cleared or entry.kind ~= "item" then return nil end
-    return 134400 + slot, entry.item.name, entry.item.quantity or 1, nil, entry.item.quality, false
+    return 134400 + slot, entry.item.name, entry.item.quantity or 1, nil, entry.item.quality, false, entry.item.quest == true
+  end
+  env.GetLootSourceInfo = function(slot)
+    local entry = loot.slots[slot]
+    if not entry or entry.cleared or entry.kind ~= "item" then return nil end
+    local source = entry.item.source or options.source
+    if type(source) == "table" then
+      if #source == 2 then return source[1], 1, source[2], 1 end
+      return source[1], 1
+    end
+    if source == nil then return nil end
+    return source, 1
   end
   env.GetLootSlotLink = function(slot)
     local entry = loot.slots[slot]

@@ -1,7 +1,7 @@
 -- The entry point (IntrepidManager/IntrepidManager.lua) with a stand-in for the game: /im, /im selftest and the
 -- saved variables. Invented names only. See AGENTS.md.
 
-local MODULES = { "Crc32", "Json", "Envelope", "Names", "Ids", "Check", "Night", "Marks", "Awards", "Council", "Version", "SelfTestSamples", "SelfTest" }
+local MODULES = { "Crc32", "Json", "Envelope", "Names", "Ids", "Check", "Night", "Marks", "Awards", "Council", "Version", "SelfTestSamples", "SelfTest", "DropLog", "Drops" }
 
 -- Loads the entry point the way the client does, with its own global environment made of stand-ins.
 -- `options` can set inCombat, noTimer, noBuildInfo and a stand-in `bit`.

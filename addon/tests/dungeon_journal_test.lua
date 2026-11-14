@@ -86,6 +86,7 @@ test("a dungeon becomes a candidate zone: bosses with their shared items, rares,
       { npcId = 990012, name = "Lord Lorem", kind = "rare", itemIds = { 900103 } },
     },
     zoneWide = { 900104 },
+    skipped = 1, -- the trash page's row whose id is still 0
   })
 end)
 
@@ -95,6 +96,7 @@ test("names are trimmed, nameless bosses and repeated items are left out, and an
     name = "The Lorem Vaults", kind = "dungeon", players = 5, partial = true,
     sources = { { name = "Ipsum the Unready", kind = "boss", itemIds = { 900201 } } },
     zoneWide = {},
+    skipped = 0,
   })
   eq(dj.zone("No Such Place"), nil)
 end)

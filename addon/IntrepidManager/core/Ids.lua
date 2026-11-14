@@ -67,6 +67,11 @@ function Ids.exportId(time, random)
   return "a-" .. Ids.base36(time) .. "-" .. Ids.randomPart(random)
 end
 
+-- The id of a drops string: "d-tpt9k0-8vbn" (docs/design/drop-list-import.md, section 5).
+function Ids.dropsId(time, random)
+  return "d-" .. Ids.base36(time) .. "-" .. Ids.randomPart(random)
+end
+
 -- Whether `text` is an id of the spec: 1 to 64 characters from A-Z a-z 0-9 _ -.
 function Ids.isId(text)
   return type(text) == "string" and #text >= 1 and #text <= 64 and string.find(text, "^[A-Za-z0-9_%-]+$") ~= nil
