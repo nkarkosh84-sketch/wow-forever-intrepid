@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 
 // The roster view choice is shared by the toolbar, the table and the footer, which are separate components.
 // It lives for the page session only and is not saved anywhere.
-let hideAlts = false
+let hideAlts = true
 const listeners = new Set<() => void>()
 
 export function setHideAlts(next: boolean) {

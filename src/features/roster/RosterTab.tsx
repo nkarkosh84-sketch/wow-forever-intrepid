@@ -9,7 +9,8 @@ import { RosterTable } from './RosterTable'
 import './Roster.css'
 import { RaidReadinessControl } from '../../shared/members/RaidReadinessControl'
 import { useRosterRaiderTypes } from './useRosterRaiderTypes'
-import { raiderTypeLabel, raiderTypeOwner } from './raiderTypes'
+import { raiderTypeLabel } from './raiderTypes'
+import { rosterAccountUid } from './account'
 
 export function RosterTab({ ctx }: { ctx: TabContext }) {
   const { roster, assignments } = ctx.data
@@ -31,14 +32,14 @@ export function RosterTab({ ctx }: { ctx: TabContext }) {
     if (key === 'role') return player.role
     if (key === 'team') return teams.find((team) => team.key === assignments[player.id])?.name
     if (key === 'raiderType') {
-      const owner = raiderTypeOwner(player, rosterById)
+      const owner = rosterAccountUid(player, rosterById)
       const type = owner ? typesByUid.get(owner) : undefined
       return type ? raiderTypeLabel(type) : undefined
     }
-    if (key === 'access') return player.linkedUid ? 'Linked' : 'No account'
+    if (key === 'access') return rosterAccountUid(player, rosterById) ? 'Linked' : 'No account'
     if (key === 'publicComment') return player.linkedUid ? publicComments.get(player.linkedUid) : undefined
     if (key === 'leadershipComment') return player.linkedUid ? leadershipComments.get(player.linkedUid) : undefined
     return undefined
   })
-  return <>{ctx.data.readinessError && <p role="alert">{ctx.data.readinessError}</p>}{raiderTypes.error && <p role="alert">{raiderTypes.error}</p>}<RosterTable raiderTypes={raiderTypes} sortUnavailable={sortUnavailable} readinessControl={ctx.identity.canEditRoster ? (player) => <RaidReadinessControl characterId={player.id} name={player.name} ctx={ctx} /> : undefined} teams={teams} players={players} allPlayers={roster} hideAlts={hideAlts} keepAltsTogether assignments={assignments} canEdit={ctx.identity.canEditRoster} comments={ctx.data.comments} showLeadership={ctx.identity.canEditRaidData && ctx.data.comments.leadership !== null} onEdit={(player) => ctx.openModal(({ close, live }) => <PlayerModal existing={player} close={close} live={live} />)} /></>
+  return <>{ctx.data.readinessError && <p role="alert">{ctx.data.readinessError}</p>}{raiderTypes.error && <p role="alert">{raiderTypes.error}</p>}<RosterTable raiderTypes={raiderTypes} sortUnavailable={sortUnavailable} readinessControl={ctx.identity.canEditRoster ? (player) => <RaidReadinessControl characterId={player.id} name={player.name} ctx={ctx} compact /> : undefined} teams={teams} players={players} allPlayers={roster} hideAlts={hideAlts} keepAltsTogether assignments={assignments} canEdit={ctx.identity.canEditRoster} comments={ctx.data.comments} showLeadership={ctx.identity.canEditRaidData && ctx.data.comments.leadership !== null} onEdit={(player) => ctx.openModal(({ close, live }) => <PlayerModal existing={player} close={close} live={live} />)} /></>
 }
