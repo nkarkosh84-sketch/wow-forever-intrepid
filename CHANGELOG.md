@@ -6,6 +6,8 @@ These entries reconcile changes present in verified production releases. They do
 
 ## Unreleased
 
+- Raids are announced in the guild's Discord channel (DISCORD-002): scheduling, changing or cancelling a raid posts or updates one message showing the start in each reader's own time zone, and reminders follow 24 hours and 1 hour before it starts.
+
 ## 2026-11-14 - 427f745
 
 Refresh open tabs to load the update.

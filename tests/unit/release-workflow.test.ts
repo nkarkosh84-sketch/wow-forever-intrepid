@@ -67,18 +67,20 @@ test('release preflight remains read-only without prompting', async () => {
   assert.ok(!calls.some((call) => call.startsWith('npm ') || call.startsWith('npx ')))
 })
 
-test('snapshot index configuration preserves collection indexes and enables the required group queries', () => {
+test('snapshot and Discord index configuration preserves collection indexes and enables the required group queries', () => {
   const config = JSON.parse(readFileSync(new URL('../../firestore.indexes.json', import.meta.url), 'utf8'))
-  assert.deepEqual(config.fieldOverrides, [{
-    collectionGroup: 'raids',
-    fieldPath: 'startsAt',
+  const groupField = (collectionGroup: string, fieldPath: string) => ({
+    collectionGroup,
+    fieldPath,
     indexes: [
       { order: 'ASCENDING', queryScope: 'COLLECTION' },
       { order: 'DESCENDING', queryScope: 'COLLECTION' },
       { arrayConfig: 'CONTAINS', queryScope: 'COLLECTION' },
       { order: 'ASCENDING', queryScope: 'COLLECTION_GROUP' },
     ],
-  }])
+  })
+  // DISCORD-002: the 5-minute sweep lists the raids whose post is due across guilds (functions/discord.js).
+  assert.deepEqual(config.fieldOverrides, [groupField('raids', 'startsAt'), groupField('discordAnnouncements', 'dueAt')])
   for (const [group, fields] of [
     ['auditLog', ['targetType', 'at']],
     ['raidSnapshotJobs', ['state', 'nextAttemptAt']],

@@ -11,6 +11,8 @@
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
     "noEmit": true,
+    /* Lets a test import the plain JavaScript of functions/ (discord-announcements.test.ts); the JavaScript itself is not type-checked */
+    "allowJs": true,
 
     /* Linting */
     "strict": true,
