@@ -212,6 +212,18 @@ describe('describeEntry for a drop list', () => {
     assert.equal(back.title, `Brought back 1 item of ${warden}`)
   })
 
+  it('an item the phase added and takes off again (it moves to the taken off list), and one brought back from there, are each counted once', () => {
+    const off = table({ changed: ['itemIds', 'hiddenItemIds'], before: { itemIds: [104, 105], hiddenItemIds: [] }, after: { itemIds: [105], hiddenItemIds: [104] } })
+    assert.equal(off.title, `Took 1 item off ${warden}`)
+    assert.deepEqual(off.details, ['Taken off from here on: Iron Ring (104)'])
+    const back = table({ changed: ['itemIds', 'hiddenItemIds'], before: { itemIds: [105], hiddenItemIds: [104] }, after: { itemIds: [105, 104], hiddenItemIds: [] } })
+    assert.equal(back.title, `Brought back 1 item of ${warden}`)
+    assert.deepEqual(back.details, ['Brought back: Iron Ring (104)'])
+    const pasted = table({ changed: ['itemIds', 'hiddenItemIds'], before: { itemIds: [105], hiddenItemIds: [104] }, after: { itemIds: [105, 104, 106], hiddenItemIds: [] } })
+    assert.equal(pasted.title, `Added 1 item to ${warden}`)
+    assert.deepEqual(pasted.details, ['Added: 106', 'Brought back: Iron Ring (104)'])
+  })
+
   it('one edit that brings an item back and adds another says both, with the other fields after', () => {
     const both = table({ changed: ['itemIds', 'hiddenItemIds', 'order'], before: { itemIds: [], hiddenItemIds: [102], order: 10 }, after: { itemIds: [900], hiddenItemIds: [], order: 20 } })
     assert.equal(both.title, `Added 1 item to ${warden}`)
@@ -268,6 +280,21 @@ describe('describeEntry for a drop list', () => {
     const stopped = table({ targetId: 'p3', item: '', changed: ['follows'], before: { follows: 2 }, after: { follows: null } })
     assert.equal(stopped.title, 'Phase 3 now follows nothing')
     assert.deepEqual(stopped.details, ['It followed Phase 2'])
+  })
+
+  it('says where a change came from, after everything else, when the entry has a reason (an import gives one), and nothing more when it has none', () => {
+    const imported = table({ action: 'create', changed: ['type', 'zoneId', 'key', 'phaseNo', 'itemIds', 'hiddenItemIds'], after: { type: 'source', zoneId: 900, key: 'npc11', phaseNo: 2, itemIds: [104], hiddenItemIds: [] }, reason: 'Imported from the addon (d-test1)' })
+    assert.equal(imported.title, `Added 1 item to ${warden}`)
+    assert.deepEqual(imported.details, ['Added: Iron Ring (104)', 'Reason: Imported from the addon (d-test1)'])
+    const made = table({ targetId: `s${LAIR}_cabc_2`, item: 'Lair Boss', action: 'create', changed: ['name', 'kind', 'itemIds'], after: { name: 'Lair Boss', kind: 'boss', itemIds: [601] }, reason: 'Imported from a capture file' })
+    assert.deepEqual(made.details, ['Kind: boss', 'Items: 601', 'Reason: Imported from a capture file'])
+    const ticked = table({ targetId: 'z900_2', item: '', action: 'create', changed: ['type', 'zoneId', 'phaseNo', 'removed'], after: { type: 'zone', zoneId: 900, phaseNo: 2, removed: false }, reason: 'Imported from the addon (d-test1)' })
+    assert.deepEqual(ticked.details, ['Reason: Imported from the addon (d-test1)'])
+    const follows = table({ targetId: 'p3', item: '', changed: ['follows'], before: { follows: 1 }, after: { follows: 2 }, reason: 'Set up for the next phase' })
+    assert.deepEqual(follows.details, ['It followed Second', 'Reason: Set up for the next phase'])
+    assert.deepEqual(table({ changed: ['itemIds'], before: { itemIds: [101] }, after: { itemIds: [101, 104] } }).details, ['Added: Iron Ring (104)'])
+    const long = table({ changed: ['itemIds'], before: { itemIds: [] }, after: { itemIds: [104] }, reason: 'y'.repeat(300) })
+    assert.equal(long.details.at(-1)?.length, 'Reason: '.length + 160) // shortened like any other text
   })
 
   it('a zone it cannot name is called "a zone"', () => {

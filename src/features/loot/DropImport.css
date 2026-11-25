@@ -1,0 +1,35 @@
+/* The drop list import, at the top of Edit the drop lists (DropImportPanel.tsx). Every class starts with import- or tables-import-. */
+.tables-import { border: 1px solid #dfe7ef; border-top: 3px solid var(--phase-accent); border-radius: var(--card-radius); }
+.tables-import > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; padding: 10px 12px; cursor: pointer; list-style: none; }
+.tables-import > summary::-webkit-details-marker { display: none; }
+.tables-import > summary::before { content: '\25B8'; flex: 0 0 auto; width: 10px; color: var(--phase-accent); font-size: 11px; transition: transform .12s; }
+.tables-import[open] > summary::before { transform: rotate(90deg); }
+.tables-import-inner { display: grid; gap: 10px; padding: 0 12px 12px; }
+.import-file input { font-size: 10px; }
+.import-errors { margin: 0; padding-left: 22px; }
+.import-zone { border: 1px solid #e6ecf1; border-radius: var(--card-radius); }
+.import-zone > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; padding: 7px var(--inner-pad-x); cursor: pointer; font-size: 12px; }
+.import-zone > summary span { color: #526158; font-size: 11px; }
+.import-unmatched { border-color: #e2c98f; }
+.import-zone-body { display: grid; gap: 8px; padding: 0 var(--inner-pad-x) 10px; }
+.import-answer { display: grid; gap: 3px; color: #3f566b; font-size: 10px; }
+.import-answer select { min-width: 0; max-width: 360px; box-sizing: border-box; padding: 6px 8px; border: 1px solid #dfe7ef; border-radius: 4px; color: #33443a; background: #fff; font: inherit; font-size: 11px; }
+.import-check { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.import-creature { display: grid; gap: 4px; padding: 6px 8px; border-left: 3px solid #c9d3dc; }
+.import-creature-off { opacity: .7; }
+.import-creature header { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.import-creature-name { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.import-items { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.import-item { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 11px; }
+.import-item-off { opacity: .8; }
+.import-tick-space { display: inline-block; flex: 0 0 13px; width: 13px; }
+.import-note { color: #526158; font-size: 10px; }
+p.import-note { margin: 0; }
+
+:root[data-theme='dark'] .tables-import, :root[data-theme='dark'] .import-zone { border-color: #3a4b61; }
+:root[data-theme='dark'] .tables-import { border-top-color: var(--phase-accent); }
+:root[data-theme='dark'] .import-unmatched { border-color: #7a6532; }
+:root[data-theme='dark'] .import-zone > summary span, :root[data-theme='dark'] .import-note { color: #9fb0c3; }
+:root[data-theme='dark'] .import-answer, :root[data-theme='dark'] .import-check { color: #bfccd9; }
+:root[data-theme='dark'] .import-answer select { border-color: #3a4b61; color: #e8edf3; background: #182536; }
+:root[data-theme='dark'] .import-creature { border-left-color: #3a4b61; }

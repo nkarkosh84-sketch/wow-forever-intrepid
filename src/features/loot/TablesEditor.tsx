@@ -6,11 +6,12 @@ import {
 } from '../../shared/game/guildTables'
 import { lootSourceKinds, type LootSourceKind } from '../../shared/game/lootTables'
 import { phaseOptions } from '../../shared/game/phases'
-import { peekItem, useItemInfo, useItemInfoVersion } from '../../shared/lib/itemInfo'
+import { isMissingItem, peekItem, useItemInfo, useItemInfoVersion } from '../../shared/lib/itemInfo'
 import type { TabContext } from '../../shared/tabs/types'
 import { ItemTooltip } from '../../shared/ui/ItemTooltip'
 import '../../shared/ui/spacing.css'
 import '../../shared/ui/zoneColor.css'
+import { DropImportPanel } from './DropImportPanel'
 import { useMergedTables } from './useDropTables'
 import { useZoneColors, zoneStyle } from './useZoneColors'
 import { groupZones, openGroupKeys, zonesStartOpen, type ZoneGroup } from '../../shared/game/zoneGroups'
@@ -30,11 +31,12 @@ type Who = { uid: string; displayName: string }
 // `whyNot` is what to say when there is nothing to write (a builder answers nothing when a limit is reached or the thing is already so).
 type Run = (writes: TableWrite[], done: string, whyNot?: string) => Promise<boolean>
 
-// One pasted item number, looked up live, so a wrong number shows before it is saved.
+// One pasted item number, looked up live, so a wrong number shows before it is saved. Only a number Wowhead has no item for is marked wrong: when
+// Wowhead could not be reached or was busy the item may well exist, so it shows why, and its tooltip offers Try again.
 function PastedItem({ id, heldBy }: { id: number; heldBy?: string }) {
   const state = useItemInfo(id)
-  if (state?.status === 'error') return <li className="tables-pasted tables-bad"><span>{id}</span> {state.message}</li>
-  return <li className={heldBy ? 'tables-pasted tables-held' : 'tables-pasted'}><ItemTooltip itemId={id} />{heldBy && <span> already on {heldBy}, so it stays there</span>}</li>
+  if (isMissingItem(state)) return <li className="tables-pasted tables-bad"><span>{id}</span> {state.message}</li>
+  return <li className={heldBy ? 'tables-pasted tables-held' : 'tables-pasted'}><ItemTooltip itemId={id} />{state?.status === 'error' && <span> {state.message}</span>}{heldBy && <span> already on {heldBy}, so it stays there</span>}</li>
 }
 
 function AddItems({ zone, source, busy, run }: { zone: MergedZone; source: MergedSource; busy: boolean; run: Run }) {
@@ -45,15 +47,15 @@ function AddItems({ zone, source, busy, run }: { zone: MergedZone; source: Merge
   const parsed = parseItemIds(pasted)
   const result = addItems(zone, source, parsed.ids)
   const holders = itemHolders(zone)
-  const unknown = parsed.ids.filter((id) => { const state = peekItem(id); return state?.status === 'error' })
+  const unknown = parsed.ids.filter((id) => isMissingItem(peekItem(id)))
   const blocked = !result.write || result.tooMany || (unknown.length > 0 && !unsure)
   if (!open) return <button type="button" className="button button-secondary tables-small" onClick={() => setOpen(true)} disabled={busy}>Add items</button>
   return <div className="tables-add">
-    <label>Item numbers or Wowhead links, one or several
+    <label>Item numbers, Wowhead links or item links from the game, one or several
       <textarea value={pasted} onChange={(event) => { setPasted(event.target.value); setUnsure(false) }} rows={2} placeholder="872, https://www.wowhead.com/forever/item=273804/..." aria-label={`Items to add to ${source.name}`} />
     </label>
     {parsed.ignored.length > 0 && <p className="tables-note">Could not read as an item: {parsed.ignored.join(', ')}</p>}
-    {parsed.ids.length > 0 && <ul className="tables-preview">{parsed.ids.map((id) => <PastedItem key={id} id={id} heldBy={holders.get(id) && !source.hiddenItemIds.includes(id) ? holders.get(id) : undefined} />)}</ul>}
+    {parsed.ids.length > 0 && <ul className="tables-preview">{parsed.ids.map((id) => <PastedItem key={id} id={id} heldBy={holders.get(id)} />)}</ul>}
     {result.tooMany && <p className="tables-note tables-bad">A creature can add at most 80 items in one phase.</p>}
     {unknown.length > 0 && <label className="tables-confirm"><input type="checkbox" checked={unsure} onChange={(event) => setUnsure(event.target.checked)} /> Add the {unknown.length} number{unknown.length === 1 ? '' : 's'} Wowhead did not recognize anyway</label>}
     <div className="tables-row-actions">
@@ -106,7 +108,8 @@ function Creature({ zone, source, index, count, phase, busy, run }: { zone: Merg
       })}
       {source.hiddenItemIds.map((id) => <li key={`hidden-${id}`} className="tables-item tables-item-hidden">
         <ItemTooltip itemId={id} />
-        <button type="button" className="tables-chip-button" aria-label={`Bring ${itemName(id)} back to ${source.name}`} title={`Taken off in ${phase}. Bring it back.`} disabled={busy} onClick={() => { const write = restoreItem(zone, source, id); if (write) void run([write], `${itemName(id)} is back on ${source.name}.`) }}>Bring back</button>
+        <button type="button" className="tables-chip-button" aria-label={`Bring ${itemName(id)} back to ${source.name}`} title={`Taken off in ${phase}. Bring it back.`} disabled={busy}
+          onClick={() => { const write = restoreItem(zone, source, id); const holder = itemHolders(zone).get(id); void run(write ? [write] : [], `${itemName(id)} is back on ${source.name}.`, holder ? `${itemName(id)} is already on ${holder}, so it stays there.` : `${itemName(id)} could not be brought back: ${source.name} already adds the most items it can in ${phase} (${TABLE_ITEMS_MAX}).`) }}>Bring back</button>
       </li>)}
       {source.itemIds.length === 0 && source.hiddenItemIds.length === 0 && <li className="tables-empty">Nothing yet.</li>}
     </ul>
@@ -247,6 +250,7 @@ export function TablesEditor({ live, phaseNo, onPhaseNo }: { live: TabContext; p
 
   return <div className="tables-editor">
     <p className="tables-intro">Drop lists are chosen per phase. A phase starts with no zones: tick the zones it has, or make it follow an earlier phase to have that phase&rsquo;s lists. What you change below is in the phase you pick and in any phase that follows it, and never reaches a finished phase. The built-in lists are not changed, every change is in the Log, and nothing is ever deleted.</p>
+    <DropImportPanel live={live} phaseNo={selected.no} phase={phase} nextPhase={next?.name} />
     <ZonesSection phases={phases} selected={selected} onPhase={changePhase} zones={zones} docs={live.data.lootTables} earlier={everyPhase.filter((candidate) => candidate.no < selected.no)} colorOf={zoneColors.ofZone} busy={busy} run={run} />
     {message && <p className={message.error ? 'tables-message tables-bad' : 'tables-message'} role={message.error ? 'alert' : 'status'}>{message.text}</p>}
     <h3 className="tables-heading">Creatures and items</h3>

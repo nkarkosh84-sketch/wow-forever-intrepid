@@ -26,7 +26,7 @@ export type RefList = {
   hasDoc: boolean // a document of exactly that phase exists
   before: number[] // entering the phase
   added: number[] // the document at exactly the phase: its itemIds minus what was there before
-  hidden: number[] // the document at exactly the phase: its hiddenItemIds that were there before
+  hidden: number[] // the document at exactly the phase: its hiddenItemIds that are not in the phase (there before, or added and taken off again in the phase)
   gone: number[] // dropped at some point, not now, and not taken off by this phase
   items: number[] // in the phase
 }
@@ -108,7 +108,9 @@ function buildList(zoneId: number, key: string, start: number[], docs: SourceTab
     for (const id of addedNow) everHad.add(id)
   }
   const added = atPhase ? unique(atPhase.itemIds).filter((id) => !before.includes(id)) : []
-  const hidden = atPhase ? unique(atPhase.hiddenItemIds).filter((id) => before.includes(id)) : []
+  // Since docs/design/drop-list-import.md section 6, an item the phase added and took off again is reported as taken off too: every item the document
+  // takes off that the phase does not have.
+  const hidden = atPhase ? unique(atPhase.hiddenItemIds).filter((id) => !items.includes(id)) : []
   const gone = [...everHad].filter((id) => !items.includes(id) && !hidden.includes(id))
   return { key, docId: sourceDocIdOf(zoneId, key, phaseNo), hasDoc: atPhase !== undefined, before, added, hidden, gone, items }
 }

@@ -6,6 +6,8 @@ These entries reconcile changes present in verified production releases. They do
 
 ## Unreleased
 
+- Guild and Raid Leaders can import drop lists in **Edit the drop lists**: paste the addon's drops string (`/im drops` in the game) or a capture file, check what it adds and where, answer what isn't clear, and save it in one step. A Guild Leader can make a new zone from it. Items from the DungeonJournal addon (`/im drops dj` in the game) can be added one boss at a time. Every change is in the Log, with where it came from. (LOOT-008)
+- **Edit the drop lists:** an item you take off is remembered even if you added it in the same phase, so you can bring it back. Item links copied from the game can be pasted. An item on a creature taken out of the lists stays there, and Bring back says why when it can't. When Wowhead can't be reached, items are no longer marked unknown. (LOOT-008)
 - Guild Leaders can approve independent name and class/specialization requests for the same character without requiring the member to resubmit one after the other. Conflicting changes still need a new request. (MEMBER-012)
 - Guild Roster displays each character's first name and surname when available.
 

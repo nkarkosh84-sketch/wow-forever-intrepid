@@ -27,7 +27,7 @@ import { nextPhaseRev } from './shared/game/phases'
 import type { TableWrite } from './shared/game/guildTables'
 import { isHexColor, isZoneKey } from './shared/game/zoneColors'
 import { EMPTY_ZONE_ART, ZONE_IMAGE_LIMIT, fullPath, isImageName, newImageId, readZoneArt, thumbPath, zonesUsing, type ZoneArt, type ZoneImage } from './shared/game/zoneArt'
-import { awardCreateFields, awardEditFields, manualAwardCreateFields, describeCreate, describeDelete, describeEdit, phaseAuditFields, priorityAuditFields, readAuditEntry, tableAuditFields, type AuditEntry } from './shared/game/lootAudit'
+import { auditReason, awardCreateFields, awardEditFields, manualAwardCreateFields, describeCreate, describeDelete, describeEdit, phaseAuditFields, priorityAuditFields, readAuditEntry, tableAuditFields, type AuditEntry } from './shared/game/lootAudit'
 import { normalizeDocs, type Normalizer } from './shared/lib/normalize'
 import { raidStartDate } from './shared/lib/raidStart'
 import { isMarkedComplete } from './shared/raids/raidCategory'
@@ -622,8 +622,9 @@ export type NewAward = { priorityId: string; item: string; encounter: string; re
 // A fresh id for every new priority: an entry id (`priority_{id}_{rev}`) can be used only once, so the id of a deleted priority cannot be created again.
 export const newPriorityId = () => crypto.randomUUID()
 
-function auditEntry(who: AuditWho, targetType: 'priority' | 'award' | 'phase' | 'table', targetId: string, rev: number, action: string, item: string, description: Record<string, unknown>) {
-  return { at: serverTimestamp(), by: who.uid, byName: who.displayName, targetType, targetId, rev, action, item, ...description }
+// `reason`, when there is one, is written on the entry as it is given (see auditReason in lootAudit.ts for what the rules accept).
+function auditEntry(who: AuditWho, targetType: 'priority' | 'award' | 'phase' | 'table', targetId: string, rev: number, action: string, item: string, description: Record<string, unknown>, reason?: string) {
+  return { at: serverTimestamp(), by: who.uid, byName: who.displayName, targetType, targetId, rev, action, item, ...description, ...(reason ? { reason } : {}) }
 }
 
 function inBatches<T>(items: T[]): T[][] {
@@ -697,8 +698,11 @@ export async function deletePriorities(priorities: PriorityRecord[], who: AuditW
 
 // The guild's own loot tables (the lootTables collection, see shared/game/guildTables.ts): each write is a new document (revision 1) or an edit of
 // one that exists, with its entry (`table_{id}_{rev}`) in the same batch. A table is never deleted; taking one away sets `removed`. The rules check
-// the entry like any other (docs/design/audit-first-loot.md). `onWritten` is told which ids a batch wrote, as for priorities.
-export async function writeLootTables(writes: TableWrite[], who: AuditWho, onWritten?: (ids: string[]) => void) {
+// the entry like any other (docs/design/audit-first-loot.md). `onWritten` is told which ids a batch wrote, as for priorities. A `reason` (1 to 300
+// characters once trimmed; a blank one is none) is written on every entry of the call, so the Log says where the changes came from, such as an import of
+// drop lists (docs/design/drop-list-import.md section 7). One the rules would refuse throws before anything is written.
+export async function writeLootTables(writes: TableWrite[], who: AuditWho, onWritten?: (ids: string[]) => void, reason?: string) {
+  const why = auditReason(reason)
   const database = requireDb()
   for (const group of inBatches(writes)) {
     const batch = writeBatch(database)
@@ -707,14 +711,14 @@ export async function writeLootTables(writes: TableWrite[], who: AuditWho, onWri
       if ('create' in write) {
         const record = Object.fromEntries(Object.entries(write.create).filter(([, value]) => value !== undefined))
         batch.set(doc(database, 'guilds', guildId, 'lootTables', write.id), { ...record, rev: 1, updatedBy: who.uid, updatedAt: serverTimestamp() })
-        batch.set(doc(database, 'guilds', guildId, 'auditLog', `table_${write.id}_1`), auditEntry(who, 'table', write.id, 1, 'create', String(record.name ?? ''), describeCreate(record, tableAuditFields)))
+        batch.set(doc(database, 'guilds', guildId, 'auditLog', `table_${write.id}_1`), auditEntry(who, 'table', write.id, 1, 'create', String(record.name ?? ''), describeCreate(record, tableAuditFields), why))
       } else {
         const description = describeEdit(write.existing as unknown as Record<string, unknown>, write.changes, tableAuditFields)
         if (!description) continue
         const rev = write.existing.rev + 1
         const update = Object.fromEntries(description.changed.map((key) => [key, write.changes[key as keyof typeof write.changes] === undefined ? deleteField() : write.changes[key as keyof typeof write.changes]]))
         batch.update(doc(database, 'guilds', guildId, 'lootTables', write.id), { ...update, rev, updatedBy: who.uid, updatedAt: serverTimestamp() })
-        batch.set(doc(database, 'guilds', guildId, 'auditLog', `table_${write.id}_${rev}`), auditEntry(who, 'table', write.id, rev, 'edit', ('name' in write.existing ? write.existing.name : undefined) ?? '', description))
+        batch.set(doc(database, 'guilds', guildId, 'auditLog', `table_${write.id}_${rev}`), auditEntry(who, 'table', write.id, rev, 'edit', ('name' in write.existing ? write.existing.name : undefined) ?? '', description, why))
       }
       written.push(write.id)
     }

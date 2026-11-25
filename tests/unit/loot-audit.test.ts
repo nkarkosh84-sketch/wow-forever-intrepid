@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { awardAsRecorded, awardCreateFields, describeCreate, describeDelete, describeEdit, isLegacyAward, legacyAwardEntry, legacyRowUncertain, priorityAuditFields, readAuditEntry, sameValue } from '../../src/shared/game/lootAudit.ts'
+import { AUDIT_REASON_MAX, auditReason, awardAsRecorded, awardCreateFields, describeCreate, describeDelete, describeEdit, isLegacyAward, legacyAwardEntry, legacyRowUncertain, priorityAuditFields, readAuditEntry, sameValue } from '../../src/shared/game/lootAudit.ts'
 
 // Invented names.
 const priority = { item: 'Test Sword', encounter: 'Test Hall \u00b7 Warden', rankedPlayers: ['Aria', 'Brock'], councilNote: '', phaseNo: 0, itemId: 101 }
@@ -66,6 +66,21 @@ describe('describeDelete', () => {
     const { changed, before } = describeDelete({ ...priority, rev: 3, updatedBy: 'someone', updatedAt: 'x' }, priorityAuditFields)
     assert.deepEqual(changed, ['item', 'encounter', 'rankedPlayers', 'councilNote', 'itemId', 'phaseNo'])
     assert.deepEqual(before, priority)
+  })
+})
+
+describe('auditReason', () => {
+  // writeLootTables puts it on every entry of a call (docs/design/drop-list-import.md section 7); the rules accept up to 300 characters.
+  it('is the reason trimmed, and none for nothing or a blank one', () => {
+    assert.equal(auditReason('  Imported from the addon (d-test1)  '), 'Imported from the addon (d-test1)')
+    assert.equal(auditReason(undefined), undefined)
+    assert.equal(auditReason(''), undefined)
+    assert.equal(auditReason(' \n\t '), undefined)
+  })
+  it('takes 300 characters once trimmed, and throws for more', () => {
+    assert.equal(AUDIT_REASON_MAX, 300)
+    assert.equal(auditReason(` ${'x'.repeat(300)} `)?.length, 300)
+    assert.throws(() => auditReason('x'.repeat(301)), /up to 300 characters/)
   })
 })
 

@@ -41,6 +41,8 @@ export function firstDiff(ref: RefZone[], actual: MergedZone[], skipReports: boo
     }
     expect(zoneId, `${path}: goneItemIds`, sorted(wantList.gone), sorted(list.goneItemIds))
     expect(zoneId, `${path}: no item twice in itemIds`, list.itemIds.length, new Set(list.itemIds).size)
+    // Whatever the documents say (also one the rules would refuse), an item reported as taken off is not in the phase, so the editor never shows it twice.
+    expect(zoneId, `${path}: no item both in itemIds and in hiddenItemIds`, [], list.hiddenItemIds.filter((id) => list.itemIds.includes(id)))
   }
   expect(undefined, 'the zones (numbers)', ref.map((zone) => zone.zoneId), byZone(actual).map((zone) => zone.zoneId))
   if (found) return found

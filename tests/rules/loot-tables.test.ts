@@ -627,6 +627,18 @@ for (const who of RAID_STAFF as readonly Staff[]) {
       }
     })
 
+    test('one edit can name a creature document that has no name, with its kind, number, order and items, and put it back (the drop list import does)', async () => {
+      // A leader changed the creature's items while this phase followed another, and the link was then taken away: the document names nothing.
+      const id = sourceTableId(ZONE_NO, 'n4887', 0)
+      await storeTable(id, { type: 'source', zoneId: ZONE_NO, key: 'n4887', phaseNo: 0, itemIds: [1111], hiddenItemIds: [2222], removed: true })
+      await expectAllowed(editOf(id, { name: 'Test Boss', kind: 'boss', npcId: 4887, order: 10, removed: false, itemIds: [1111, 3333] }))
+      const saved = await stored(`lootTables/${id}`)
+      assert.deepEqual([saved?.name, saved?.kind, saved?.npcId, saved?.order, saved?.removed, saved?.itemIds, saved?.hiddenItemIds, saved?.rev], ['Test Boss', 'boss', 4887, 10, false, [1111, 3333], [2222], 2])
+      const logged = await stored(`auditLog/${entryId('table', id, 2)}`)
+      assert.equal(logged?.item, '', 'the label is the name before the edit: none')
+      assert.deepEqual(((logged?.changed ?? []) as string[]).slice().sort(), ['itemIds', 'kind', 'name', 'npcId', 'order', 'removed'])
+    })
+
     test('a creature can be taken out of the lists and brought back, with the items it has', async () => {
       await storeTable(SOURCE_TABLE, sourceTableDoc())
       await expectAllowed(edit({ removed: true }), 'out')
@@ -1153,6 +1165,15 @@ for (const who of RAID_STAFF as readonly Staff[]) {
     test('an edit that takes every optional field away', async () => {
       await storeTable(SOURCE_TABLE, sourceTableDoc({ npcId: 4887, removed: false }))
       await expectAllowed(edit({ name: GONE, kind: GONE, npcId: GONE, order: GONE, removed: GONE }))
+    })
+
+    // The drop list import (LOOT-008) writes a reason on every entry, such as "Imported from the addon (d-...)": the widest writes still fit with the longest one.
+    test('the widest creature document and the widest edit, each with a reason of 300 characters', async () => {
+      const fields = sourceTableDoc({ zoneId: 100_000_000, key: 'k'.repeat(30), phaseNo: 1, name: 'x'.repeat(100), kind: 'trash', npcId: 100_000_000, order: 100_000, itemIds: ids(80), hiddenItemIds: ids(80, 5000), removed: true })
+      await expectAllowed(createTable(dbFor(who), who, { fields, audit: { reason: 'r'.repeat(300) } }))
+      assert.equal((await stored(`auditLog/${entryId('table', tableIdOf(fields), 1)}`))?.reason, 'r'.repeat(300))
+      await storeTable(SOURCE_TABLE, sourceTableDoc({ npcId: 4887, removed: false }))
+      await expectAllowed(edit({ name: 'x'.repeat(100), kind: 'trash', npcId: 100_000_000, order: 100_000, itemIds: ids(80), hiddenItemIds: ids(80, 5000), removed: true }, { audit: { reason: 'r'.repeat(300) } }))
     })
   })
 }

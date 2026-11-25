@@ -567,7 +567,7 @@ The import is designed in [`docs/design/drop-list-import.md`](../design/drop-lis
 - **Several strings at once.** The importer reads every envelope it finds (step 10), so two loot masters' strings, or a loot master's and a raider's, import together. It is never E_MULTIPLE.
 - **Merging.** Rows are merged by the keys of section 14.1. A count seen by two clients is the larger one, never the sum. A source known only by its encounter joins a source of the same zone with the same `encounterId` and an `npcId`.
 - **Nothing is saved before a preview**, and nothing is ever deleted.
-- **DungeonJournal items** (`journal`) are information in the preview and can't be saved, until the maintainer decides otherwise (design decision D6, 2026-11-14).
+- **DungeonJournal items** (`journal`) start unticked in the preview. A leader saves them one creature at a time, in their own write with their own Log reason (design decision D6, changed 2026-11-24).
 
 ### 14.5 Versioning
 

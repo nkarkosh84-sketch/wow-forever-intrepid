@@ -111,6 +111,23 @@ export function sanitizeTooltipHtml(html: string): TooltipNode[] {
   return root.children
 }
 
+// Why looking an item up failed (shared/lib/itemInfo.ts asks the endpoint). Only 'missing' says Wowhead has no such item. The others are about the
+// connection or the answer, so the item may well exist and asking again can find it: 'unreachable' (no answer), 'busy' (Wowhead asked to come back
+// later) and 'refused' (an error answer, or one the app does not accept). The import of drop lists shows only 'missing' as an unknown item
+// (docs/design/drop-list-import.md section 7).
+export type ItemLookupReason = 'missing' | 'unreachable' | 'busy' | 'refused'
+export type ItemLookupError = { reason: ItemLookupReason; message: string }
+export const itemLookupErrors: Record<'missing' | 'unreachable' | 'busy' | 'tooLarge', ItemLookupError> = {
+  missing: { reason: 'missing', message: 'Wowhead has no item with this id.' }, // also a good answer with no usable name (parseItemTooltip)
+  unreachable: { reason: 'unreachable', message: 'Could not reach Wowhead.' },
+  busy: { reason: 'busy', message: 'Wowhead is busy. Try again in a moment.' },
+  tooLarge: { reason: 'refused', message: 'Wowhead sent an unexpected answer.' },
+}
+
+/** What an answer that is not a good one means, by its HTTP status: no such item (404), busy for now (429 and 5xx, worth asking again), or refused. */
+export const itemLookupErrorOf = (status: number): ItemLookupError =>
+  status === 404 ? itemLookupErrors.missing : status === 429 || status >= 500 ? itemLookupErrors.busy : { reason: 'refused', message: `Wowhead answered with an error (${status}).` }
+
 // Reads the answer of the tooltip endpoint. Returns undefined when it has no usable name. Everything is checked: the answer comes
 // from a third party.
 export function parseItemTooltip(data: unknown): ItemInfo | undefined {

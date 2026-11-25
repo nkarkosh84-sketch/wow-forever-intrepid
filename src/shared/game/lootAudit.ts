@@ -51,6 +51,20 @@ export function describeDelete(current: Values, listed: readonly string[]) {
   return { changed: present, before: Object.fromEntries(present.map((key) => [key, current[key]])) }
 }
 
+// The rules accept a reason of up to 300 characters on any entry (validAuditEntry).
+export const AUDIT_REASON_MAX = 300
+
+/**
+ * The reason an entry carries: trimmed, and none for a blank one. A reason longer than the rules accept throws, so a helper that checks it first
+ * writes nothing.
+ */
+export function auditReason(reason: string | undefined): string | undefined {
+  const text = reason?.trim()
+  if (!text) return undefined
+  if (text.length > AUDIT_REASON_MAX) throw new Error(`A reason can be up to ${AUDIT_REASON_MAX} characters.`)
+  return text
+}
+
 export type AuditTarget = 'award' | 'priority' | 'raid' | 'phase' | 'table'
 export type AuditEntry = {
   id: string

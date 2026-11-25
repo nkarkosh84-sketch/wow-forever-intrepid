@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 import {
   CUSTOM_ZONE_MIN, describePreparedTables, followChain, followedBy, hasText, phaseDocId, phaseDocOf, setFollows, setZonesInPhase, TABLE_ITEMS_MAX, ZONE_WIDE_KEY, addCreature, addItems, addZone, builtInKey, dropTablesOf as dropTablesAlone, editZone, firstPhases, itemHolders, mergeTables as mergeTablesAlone, moveCreature,
   newCreatureKey, newZoneId, parseItemIds, readTableDoc, renameCreature, restoreItem, setCreatureRemoved, setZoneInPhase, sourceDocId, takeOffItem, zoneDocId,
-  type LootTableDoc, type PhaseTableDoc, type SourceTableDoc, type ZoneTableDoc,
+  type LootTableDoc, type PhaseTableDoc, type SourceTableDoc, type TableWrite, type ZoneTableDoc,
 } from '../../src/shared/game/guildTables.ts'
 import type { LootTableCapture } from '../../src/shared/game/lootTables.ts'
 
@@ -92,11 +92,12 @@ describe('items follow the phases', () => {
   })
 
   it('at the phase itself it reports what that phase added and took off, before it, and the document', () => {
+    // 999 was never there: that is how an item the phase added and took off again looks, so it is reported as taken off too (drop-list-import.md section 6)
     const docs = [overlay('11', 1, { itemIds: [104] }), overlay('11', 2, { itemIds: [105], hiddenItemIds: [101, 999] })]
     const merged = sourceOf(docs, 2, builtInKey(11))
     assert.deepEqual(merged.beforeItemIds, [101, 102, 103, 104])
     assert.deepEqual(merged.addedItemIds, [105])
-    assert.deepEqual(merged.hiddenItemIds, [101])
+    assert.deepEqual(merged.hiddenItemIds, [101, 999])
     assert.deepEqual(merged.itemIds, [102, 103, 104, 105])
     assert.equal(merged.doc?.phaseNo, 2)
     const later = sourceOf(docs, 3, builtInKey(11))
@@ -243,6 +244,30 @@ describe('parseItemIds', () => {
   it('gives nothing for nothing', () => {
     assert.deepEqual(parseItemIds('  \n '), { ids: [], ignored: [] })
   })
+  // docs/design/drop-list-import.md section 9. Invented item names and numbers.
+  it('reads the game\'s item strings, with or without more fields after the number', () => {
+    assert.deepEqual(parseItemIds('item:90001 item:90002:0:0:0:0:0:0:0:0:60, item:90003::::::::60:::::\nitem:90004;'), { ids: [90001, 90002, 90003, 90004], ignored: [] })
+  })
+  it('reads whole in-game item links, whose names can hold spaces and commas, and leaves nothing of them over', () => {
+    const pasted = [
+      '|cffa335ee|Hitem:90011::::::::60:::::|h[Test Blade, of the Quiet Hollow]|h|r',
+      '|Hitem:90012:0:0:0|h[Plain Ring]|h', // no color, no |r
+      '|cnIQ4:|Hitem:90013::|h[Newer Client Cloak]|h|r', // a newer client's color
+      '||cff0070dd||Hitem:90014:0||h[Copied From An Edit Box]||h||r', // every | doubled
+      '|Hitem:90015|h[First]|h|Hitem:90016|h[Second]|h', // two links with nothing between them
+    ].join('\n')
+    assert.deepEqual(parseItemIds(pasted), { ids: [90011, 90012, 90013, 90014, 90015, 90016], ignored: [] })
+    assert.deepEqual(parseItemIds('Loot: |cff1eff00|Hitem:90021:0|h[Green Thing]|h|r and 90022').ids, [90021, 90022])
+  })
+  it('reads every form once, mixed in one paste, and keeps what it read before as it was', () => {
+    assert.deepEqual(parseItemIds('872 item:872 |Hitem:872:0|h[Same Item]|h https://www.wowhead.com/forever/item=872/same-item').ids, [872])
+    assert.deepEqual(parseItemIds('item=55 55 item:56 https://www.wowhead.com/item=57').ids, [55, 56, 57])
+  })
+  it('ignores what only looks like an item string, and a number out of range', () => {
+    const { ids, ignored } = parseItemIds('item: item:abc item:90031abc xitem:90032 item:0 item:1234567890 |Hitem:1234567890|h[Too Long]|h item:90033')
+    assert.deepEqual(ids, [90033])
+    assert.deepEqual(ignored, ['item:', 'item:abc', 'item:90031abc', 'xitem:90032', 'item:0', 'item:1234567890', 'item:1234567890'])
+  })
 })
 
 describe('keys and numbers', () => {
@@ -318,23 +343,36 @@ describe('adding items in a phase', () => {
     assert.equal(addItems(zone, zone.sources[0], []).write, null)
   })
 
-  it('counts an item of another creature, and of the zone-wide list, as held, but not one of a removed creature', () => {
+  it('counts an item of another creature, of the zone-wide list and of a creature a leader took out as held', () => {
     const holders = itemHolders(zoneOf([], 1))
     assert.equal(holders.get(201), 'Second Warden')
     assert.equal(holders.get(901), 'Any creature in the zone')
+    // A creature taken out keeps its items, so bringing it back must not put one of them on two creatures (drop-list-import.md section 6).
     const removed = source(900, 'cabc', 1, { name: 'Gone', order: 40, itemIds: [700], removed: true })
-    assert.equal(itemHolders(zoneOf([removed], 1)).has(700), false)
+    assert.equal(itemHolders(zoneOf([removed], 1)).get(700), 'Gone')
+    const zone = zoneOf([removed], 1)
+    const result = addItems(zone, zone.sources[1], [700, 701])
+    assert.deepEqual(result.alreadyIn, [{ id: 700, where: 'Gone' }])
+    assert.deepEqual(result.added, [701])
+  })
+
+  it('names a creature in the lists, then the zone-wide list, before a creature taken out, for an item more than one of them came to have', () => {
+    const removed = source(900, 'cabc', 1, { name: 'Gone', order: 5, itemIds: [201, 901, 700], removed: true })
+    const holders = itemHolders(zoneOf([removed], 1))
+    assert.equal(holders.get(201), 'Second Warden')
+    assert.equal(holders.get(901), 'Any creature in the zone')
+    assert.equal(holders.get(700), 'Gone')
   })
 })
 
 describe('taking items off in a phase', () => {
-  it('an item this phase added is taken back off this phase list; one it had from before is taken off from this phase on', () => {
+  it('an item this phase added moves from its added list to its taken off list; one it had from before is taken off from this phase on', () => {
     const docs = [overlay('11', 1, { itemIds: [104] }), overlay('11', 2, { itemIds: [105] })]
     const zone = zoneOf(docs, 2)
     const target = zone.sources[0]
     const own = takeOffItem(zone, target, 105)
     assert.ok(own && 'existing' in own)
-    if (own && 'existing' in own) assert.deepEqual(own.changes, { itemIds: [] })
+    if (own && 'existing' in own) assert.deepEqual(own.changes, { itemIds: [], hiddenItemIds: [105] })
     const inherited = takeOffItem(zone, target, 104)
     assert.ok(inherited && 'existing' in inherited)
     if (inherited && 'existing' in inherited) assert.deepEqual(inherited.changes, { hiddenItemIds: [104] })
@@ -357,6 +395,77 @@ describe('taking items off in a phase', () => {
     const back = restoreItem(zone, zone.sources[0], 102)
     assert.ok(back && 'existing' in back)
     if (back && 'existing' in back) assert.deepEqual(back.changes, { hiddenItemIds: [] })
+  })
+
+  it('an item taken off that another creature has now, also one a leader took out, stays there: it is not brought back, as addItems would not add it', () => {
+    const moved = [overlay('11', 2, { hiddenItemIds: [102] }), overlay('12', 2, { itemIds: [102] })]
+    const zone = zoneOf(moved, 2)
+    assert.equal(restoreItem(zone, zone.sources[0], 102), null)
+    assert.deepEqual(addItems(zone, zone.sources[0], [102]).alreadyIn, [{ id: 102, where: 'Second Warden' }])
+    const out = [overlay('11', 2, { hiddenItemIds: [102] }), source(900, 'cabc', 2, { name: 'Gone', order: 40, itemIds: [102], removed: true })]
+    const outZone = zoneOf(out, 2)
+    assert.equal(restoreItem(outZone, outZone.sources[0], 102), null)
+  })
+})
+
+// docs/design/drop-list-import.md section 6: an item a leader adds and takes off within one phase is remembered on the document's taken off list, so the
+// editor can bring it back and an import knows a leader took it off.
+describe('an item added and taken off again in one phase', () => {
+  const apply = (docs: LootTableDoc[], write: TableWrite | null): LootTableDoc[] => {
+    assert.ok(write)
+    if ('create' in write) return [...docs, { ...write.create, id: write.id, rev: 1 } as LootTableDoc]
+    return docs.map((doc) => (doc.id === write.id ? ({ ...doc, ...write.changes, rev: doc.rev + 1 } as LootTableDoc) : doc))
+  }
+  const warden = (docs: LootTableDoc[]) => sourceOf(docs, 2, builtInKey(11))
+  const added = apply([], addItems(zoneOf([], 2), warden([]), [104, 105]).write)
+  const takenOff = apply(added, takeOffItem(zoneOf(added, 2), warden(added), 104))
+
+  it('stays on the document\'s taken off list and is reported as taken off, not as added and not as gone', () => {
+    assert.deepEqual(takenOff.map((doc) => [(doc as SourceTableDoc).itemIds, (doc as SourceTableDoc).hiddenItemIds]), [[[105], [104]]])
+    const merged = warden(takenOff)
+    assert.deepEqual(merged.itemIds, [101, 102, 103, 105])
+    assert.deepEqual(merged.addedItemIds, [105])
+    assert.deepEqual(merged.hiddenItemIds, [104])
+    assert.deepEqual(merged.goneItemIds, [])
+    // the phase that follows never had it, so it shows nothing there; the trace is the document of phase 2
+    assert.deepEqual(sourceOf(takenOff, 3, builtInKey(11)).hiddenItemIds, [])
+    assert.deepEqual(items(takenOff, 3), [101, 102, 103, 105])
+  })
+
+  it('is brought back as added in the phase, by Bring back or by pasting it again', () => {
+    const restored = apply(takenOff, restoreItem(zoneOf(takenOff, 2), warden(takenOff), 104))
+    assert.deepEqual(restored.map((doc) => [(doc as SourceTableDoc).itemIds, (doc as SourceTableDoc).hiddenItemIds]), [[[105, 104], []]])
+    assert.deepEqual(warden(restored).addedItemIds, [105, 104])
+    const pasted = addItems(zoneOf(takenOff, 2), warden(takenOff), [104, 106])
+    assert.deepEqual(pasted.added, [104, 106])
+    assert.ok(pasted.write && 'existing' in pasted.write)
+    if (pasted.write && 'existing' in pasted.write) assert.deepEqual(pasted.write.changes, { itemIds: [105, 104, 106], hiddenItemIds: [] })
+  })
+
+  it('an item it had before is still brought back by leaving the taken off list, next to one this phase added', () => {
+    const both = apply(takenOff, takeOffItem(zoneOf(takenOff, 2), warden(takenOff), 102))
+    assert.deepEqual(warden(both).hiddenItemIds, [104, 102])
+    const back = restoreItem(zoneOf(both, 2), warden(both), 102)
+    assert.ok(back && 'existing' in back)
+    if (back && 'existing' in back) assert.deepEqual(back.changes, { hiddenItemIds: [104] })
+  })
+
+  it('stops at 80 items taken off, and at 80 added when one comes back', () => {
+    const full = overlay('11', 2, { itemIds: [104], hiddenItemIds: Array.from({ length: TABLE_ITEMS_MAX }, (_, index) => 5000 + index) })
+    assert.equal(takeOffItem(zoneOf([full], 2), warden([full]), 104), null)
+    const roomless = overlay('11', 2, { itemIds: Array.from({ length: TABLE_ITEMS_MAX }, (_, index) => 6000 + index), hiddenItemIds: [104] })
+    assert.equal(restoreItem(zoneOf([roomless], 2), warden([roomless]), 104), null)
+    assert.equal(addItems(zoneOf([roomless], 2), warden([roomless]), [104]).tooMany, true)
+    const room = overlay('11', 2, { itemIds: Array.from({ length: TABLE_ITEMS_MAX - 1 }, (_, index) => 6000 + index), hiddenItemIds: [104] })
+    const last = restoreItem(zoneOf([room], 2), warden([room]), 104)
+    assert.ok(last && 'existing' in last)
+    if (last && 'existing' in last) assert.equal((last.changes.itemIds as number[]).length, TABLE_ITEMS_MAX)
+  })
+
+  it('an item both lists of one document name (the rules refuse it) is there, and not also reported as taken off', () => {
+    const both = sourceOf([overlay('11', 2, { itemIds: [104], hiddenItemIds: [104, 102] })], 2, builtInKey(11))
+    assert.deepEqual(both.itemIds, [101, 103, 104])
+    assert.deepEqual(both.hiddenItemIds, [102])
   })
 })
 

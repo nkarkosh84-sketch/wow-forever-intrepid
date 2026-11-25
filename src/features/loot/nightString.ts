@@ -1,7 +1,9 @@
 // The night string's writer (ADDON-002, issue #193): a night model (docs/spec/exchange-v0.md section 5.1) to the one line the loot master pastes into the
 // addon's import box. Section 1 is the envelope (IM1:night:j:<length>:<payload>:<crc>), section 3 the canonical JSON. The fixtures in
-// docs/spec/fixtures/ are the authority, and the unit tests compare this writer's output with them byte for byte. Nothing here imports anything, so
-// Node runs the tests directly. copyForAddon.ts builds the model from the app's own data.
+// docs/spec/fixtures/ are the authority, and the unit tests compare this writer's output with them byte for byte. Its one import, the CRC-32, has no runtime
+// imports either, so Node runs the tests directly. copyForAddon.ts builds the model from the app's own data.
+
+import { crc32 } from '../../shared/lib/exchangeString.ts'
 
 export type NightRaid = { id: string; date: string; name?: string; size?: 10 | 20 | 40 }
 export type NightKnown = { id: string; rev: number }
@@ -88,26 +90,8 @@ export function canonicalJson(value: unknown): string {
   return JSON.stringify(value).replace(/[\u007f-￿|]/g, (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'))
 }
 
-let crcTable: Uint32Array | undefined
-const table = () => {
-  if (crcTable) return crcTable
-  crcTable = new Uint32Array(256)
-  for (let n = 0; n < 256; n++) {
-    let c = n
-    for (let bit = 0; bit < 8; bit++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
-    crcTable[n] = c >>> 0
-  }
-  return crcTable
-}
-
-/** CRC-32 (zlib, PNG) of the text's UTF-8 bytes, as 8 lowercase hex digits. An envelope is ASCII, so its bytes are its characters. */
-export function crc32(text: string): string {
-  const bytes = new TextEncoder().encode(text)
-  const lookup = table()
-  let c = 0xffffffff
-  for (const byte of bytes) c = lookup[(c ^ byte) & 0xff]! ^ (c >>> 8)
-  return ((c ^ 0xffffffff) >>> 0).toString(16).padStart(8, '0')
-}
+// The CRC-32 lives with the reader the importers share (shared/lib/exchangeString.ts); it is exported here too, as before.
+export { crc32 }
 
 /** The envelope around a payload (section 1): the checksum covers everything from the `I` of IM1 to the `:` before it. */
 export function envelope(kind: 'night' | 'awards', payload: string): string {

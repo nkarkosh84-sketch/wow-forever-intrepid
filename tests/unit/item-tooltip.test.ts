@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { itemIconUrl, itemSlotLabel, itemTooltipUrl, parseItemTooltip, sanitizeTooltipHtml, slotLabels, tooltipLimits, type TooltipElement, type TooltipNode } from '../../src/shared/game/itemTooltip.ts'
+import { itemIconUrl, itemLookupErrorOf, itemLookupErrors, itemSlotLabel, itemTooltipUrl, parseItemTooltip, sanitizeTooltipHtml, slotLabels, tooltipLimits, type TooltipElement, type TooltipNode } from '../../src/shared/game/itemTooltip.ts'
 
 const allowedTags = new Set(['table', 'tbody', 'tr', 'td', 'th', 'b', 'i', 'span', 'div', 'br'])
 const allowedClass = /^(q[0-9]?|money(gold|silver|copper)|whtt-[a-z]+)$/
@@ -256,4 +256,21 @@ describe('itemSlotLabel', () => {
     assert.equal(slotOf(slotCell('Finger of the Wind')), undefined)
   })
   it('takes the first slot cell it finds', () => assert.equal(slotOf(slotCell('Two-Hand', 'Axe') + slotCell('Finger')), 'Two-Hand'))
+})
+
+describe('itemLookupErrorOf and itemLookupErrors', () => {
+  // docs/design/drop-list-import.md section 7: only an item Wowhead has no record of is an unknown item; unreachable and busy are shown as that, with a retry.
+  it('tells an item Wowhead does not have apart from a busy Wowhead and a refused request', () => {
+    assert.deepEqual(itemLookupErrorOf(404), { reason: 'missing', message: 'Wowhead has no item with this id.' })
+    for (const status of [429, 500, 502, 503, 504]) assert.deepEqual(itemLookupErrorOf(status), { reason: 'busy', message: 'Wowhead is busy. Try again in a moment.' }, `status ${status}`)
+    for (const status of [400, 401, 403, 410, 418]) assert.deepEqual(itemLookupErrorOf(status), { reason: 'refused', message: `Wowhead answered with an error (${status}).` }, `status ${status}`)
+  })
+  it('keeps the messages the app showed before, one reason each', () => {
+    assert.deepEqual(itemLookupErrors, {
+      missing: { reason: 'missing', message: 'Wowhead has no item with this id.' },
+      unreachable: { reason: 'unreachable', message: 'Could not reach Wowhead.' },
+      busy: { reason: 'busy', message: 'Wowhead is busy. Try again in a moment.' },
+      tooLarge: { reason: 'refused', message: 'Wowhead sent an unexpected answer.' },
+    })
+  })
 })

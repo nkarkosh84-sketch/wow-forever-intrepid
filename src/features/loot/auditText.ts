@@ -149,8 +149,10 @@ function describeTableEntry(entry: AuditEntry, lookups: TableLookups, phaseName:
   const after = numbers(entry.after.itemIds)
   const hiddenBefore = numbers(entry.before.hiddenItemIds)
   const hiddenAfter = numbers(entry.after.hiddenItemIds)
-  const added = after.filter((id) => !before.includes(id))
-  const taken = [...before.filter((id) => !after.includes(id)), ...hiddenAfter.filter((id) => !hiddenBefore.includes(id))]
+  // An item the phase added and takes off again moves from the added list to the taken off list in one edit, and moves back when it is brought back
+  // (docs/design/drop-list-import.md section 6): each is one item taken off, or one brought back, not also one added.
+  const added = after.filter((id) => !before.includes(id) && !hiddenBefore.includes(id))
+  const taken = [...new Set([...before.filter((id) => !after.includes(id)), ...hiddenAfter.filter((id) => !hiddenBefore.includes(id))])]
   const back = hiddenBefore.filter((id) => !hiddenAfter.includes(id))
   const details = [
     ...(added.length ? [`Added: ${ids(added)}`] : []),
@@ -176,7 +178,11 @@ export function describeEntry(entry: AuditEntry, phaseName: (no: number) => stri
   const idsLine = idsOnly(entry)
   const reason = entry.reason ? [`Reason: ${clip(entry.reason)}`] : []
 
-  if (entry.targetType === 'table') return describeTableEntry(entry, lookups, phaseName, change)
+  // A drop list entry can carry where its change came from, such as an import (docs/design/drop-list-import.md section 7): last, as for the others.
+  if (entry.targetType === 'table') {
+    const said = describeTableEntry(entry, lookups, phaseName, change)
+    return { ...said, details: [...said.details, ...reason] }
+  }
   // The one-time launch reset (docs/design/launch-reset.md): written by the maintainer's script, not by the app, when the pre-launch phase's test data was
   // erased. The numbers are what was erased; nothing else about it can be read from the Log, which is the point of the entry.
   if (entry.targetType === 'ledger') {
